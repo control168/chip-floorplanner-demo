@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chip Floor Planner · 晶片堆疊樓層擺盤工具</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1120; }
+    .page { display: flex; flex-direction: column; height: 100vh; }
+    header { padding: 10px 18px; background: #0b1120; color: #e2e8f0;
+             font-family: "Segoe UI", "Microsoft JhengHei", sans-serif;
+             border-bottom: 1px solid #1e293b; display: flex; align-items: center; gap: 14px; }
+    header h1 { font-size: 16px; margin: 0; }
+    header span { font-size: 12px; color: #64748b; }
+    header .spacer { flex: 1; }
+    header button { background: #1e293b; color: #cbd5e1; border: 1px solid #334155;
+                    border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+    header button:hover { background: #334155; }
+    .embed { flex: 1; min-height: 0; }
+  </style>
+
+  <!-- 渲染引擎：Three.js（WebGL，最快 GPU 路徑）+ OrbitControls -->
+  <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- Excel 讀寫：SheetJS（選用，支援 .xlsx 直接匯入/匯出） -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- 本工具（可外掛 Web Component） -->
+  <script src="chip-floor-planner.js"></script>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>🧩 Chip Floor Planner</h1>
+      <span>晶片堆疊樓層擺盤 · CoWoS / InFO / SoIC · 2D ⇄ 3D</span>
+      <div class="spacer"></div>
+      <button id="export">匯出 JSON</button>
+      <button id="import">匯入 JSON</button>
+    </header>
+    <chip-floor-planner class="embed" id="planner"></chip-floor-planner>
+  </div>
+
+  <script>
+    const planner = document.getElementById('planner');
+    document.getElementById('export').onclick = () => {
+      const blob = new Blob([planner.exportJSON()], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'chip-floorplan.json';
+      a.click();
+    };
+    document.getElementById('import').onclick = () => {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = '.json';
+      inp.onchange = () => {
+        const f = inp.files[0]; if (!f) return;
+        const r = new FileReader();
+        r.onload = () => planner.importJSON(r.result);
+        r.readAsText(f);
+      };
+      inp.click();
+    };
+  </script>
+</body>
+</html>

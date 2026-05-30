@@ -1,0 +1,9 @@
+floor,floor_w,floor_d,floor_h,category,component,width,depth,height,x,y,z,rotation,gap_note
+Substrate Level,55,55,3,CoWoS,Package Substrate,55,55,3,0,0,0,0,Organic build-up substrate (BGA)
+Interposer Level,55,55,2.5,CoWoS,C4 Bump Array,50,50,0.5,0,0,0,0,Substrate-to-interposer C4 bumps
+Interposer Level,,,,CoWoS,Silicon Interposer,50,50,1.5,0,0,0.5,0,TSV silicon interposer (>1.2x reticle)
+Die/HBM Level,55,55,9,CoWoS,Logic Die (SoC/GPU),24,24,4,0,0,0,0,Main compute die (chiplet)
+Die/HBM Level,,,,CoWoS,HBM Stack 1,11,11,8,20,8,0,0,12-Hi DRAM cube; ~0.4mm to logic
+Die/HBM Level,,,,CoWoS,HBM Stack 2,11,11,8,20,-8,0,0,12-Hi DRAM cube
+Die/HBM Level,,,,CoWoS,HBM Stack 3,11,11,8,-20,8,0,0,12-Hi DRAM cube
+Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
