@@ -222,9 +222,16 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
     }
 
     // ---- 樓層資料 ----
-    _addFloor(name, w, d, h) {
-      this.state.floors.push({ id: uid(), name, w, d, h, comps: [] });
+    _addFloor(name, w, d, h, grid) {
+      this.state.floors.push({ id: uid(), name, w, d, h, grid: grid || 1, comps: [] });
     }
+    // 座標轉換：場景中心原點 ⇄ 左下角原點（定位點）
+    _toDatumX(cx, f) { return cx + f.w / 2; }   // 場景 → 左下角相對
+    _toDatumY(cy, f) { return cy + f.d / 2; }
+    _fromDatumX(X, f) { return X - f.w / 2; }    // 左下角相對 → 場景
+    _fromDatumY(Y, f) { return Y - f.d / 2; }
+    // 吸附到格點（以左下角原點對齊，格距 = f.grid）
+    _snapToGrid(v, half, g) { g = g || 1; return Math.round((v + half) / g) * g - half; }
     get floor() { return this.state.floors[this.state.activeFloor]; }
     _floorBaseY(idx) {
       let y = 0;
@@ -256,6 +263,7 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
             <div class="field">樓層 W<input data-fld="fw" type="number" min="10"></div>
             <div class="field">D<input data-fld="fd" type="number" min="10"></div>
             <div class="field">高<input data-fld="fh" type="number" min="1"></div>
+            <div class="field">格距µm<input data-fld="grid" type="number" min="0.01" step="0.1"></div>
             <div class="sep"></div>
             <button class="btn" data-act="addfloor">+ 新增樓層</button>
             <button class="btn on" data-act="snap">⌁ 吸附對齊</button>
@@ -378,7 +386,7 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
     _syncFloorFields() {
       const f = this.floor;
       const set = (k, v) => { const i = this.root.querySelector(`[data-fld="${k}"]`); if (i) i.value = v; };
-      set('fw', f.w); set('fd', f.d); set('fh', f.h);
+      set('fw', f.w); set('fd', f.d); set('fh', f.h); set('grid', f.grid || 1);
     }
 
     // ---- toolbar 動作 ----
@@ -389,7 +397,7 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       else if (act === 'redo') this._redo();
       else if (act === 'addfloor') {
         this._pushHistory();
-        this._addFloor('Layer ' + (this.state.floors.length + 1), this.floor.w, this.floor.d, 8);
+        this._addFloor('Layer ' + (this.state.floors.length + 1), this.floor.w, this.floor.d, 8, this.floor.grid);
         this.state.activeFloor = this.state.floors.length - 1;
         this._renderTabs(); this._syncFloorFields(); this._rebuildScene();
       } else if (act === 'snap') {
@@ -436,6 +444,7 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       this._pushHistory();
       const f = this.floor;
       if (k === 'fw') f.w = v; else if (k === 'fd') f.d = v; else if (k === 'fh') f.h = v;
+      else if (k === 'grid') f.grid = v;
       this._rebuildScene();
     }
 
@@ -539,11 +548,14 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
         slab.position.set(0, baseY + 0.2, 0);
         slab.receiveShadow = true;
         this.floorGroup.add(slab);
-        // 網格線（僅作用層）
+        // 網格線（僅作用層，格距對齊 f.grid，密度上限 200）
         if (active) {
-          const grid = new THREE.GridHelper(Math.max(f.w, f.d), Math.max(f.w, f.d) / 10, '#334155', '#243044');
+          const size = Math.max(f.w, f.d);
+          const div = Math.min(200, Math.max(1, Math.round(size / (f.grid || 1))));
+          const grid = new THREE.GridHelper(size, div, '#334155', '#243044');
           grid.position.set(0, baseY + 0.42, 0);
           this.floorGroup.add(grid);
+          this._addDatum(f, baseY);            // 左下角原點定位標記
         }
         // 元件
         f.comps.forEach(c => {
@@ -642,6 +654,22 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
         new THREE.LineBasicMaterial({ color: '#ef4444' })));
       this.koGroup.add(mesh);
       return mesh;
+    }
+
+    // 樓層定位原點（左下角 = 座標 0,0）：X(紅)/Y(綠) 軸指示 + 標籤
+    _addDatum(f, baseY) {
+      const ox = -f.w / 2, oz = -f.d / 2, y = baseY + 0.5;
+      const len = Math.max(6, Math.min(f.w, f.d) * 0.16);
+      const mk = (to, col) => this.floorGroup.add(new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(ox, y, oz), to]),
+        new THREE.LineBasicMaterial({ color: col })));
+      mk(new THREE.Vector3(ox + len, y, oz), '#f87171');   // +X 寬度方向
+      mk(new THREE.Vector3(ox, y, oz + len), '#4ade80');   // +Y 深度方向
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(1.6, 10, 10),
+        new THREE.MeshBasicMaterial({ color: '#fbbf24' }));
+      dot.position.set(ox, y, oz);
+      this.floorGroup.add(dot);
+      this.floorGroup.add(this._makeLabel('原點 0,0', new THREE.Vector3(ox, y, oz)));
     }
 
     _disposeGroup(g) {
@@ -887,7 +915,9 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       if (this.koDrag) {
         this._ndcFrom(e); const hit = this._planeHit(); if (!hit) return;
         if (!this.koDrag.moved) { this._pushHistory(); this.koDrag.moved = true; }
-        this.koDrag.ko.x = Math.round(hit.x); this.koDrag.ko.y = Math.round(hit.y);
+        const kf = this.floor;
+        this.koDrag.ko.x = this._snapToGrid(hit.x, kf.w / 2, kf.grid);
+        this.koDrag.ko.y = this._snapToGrid(hit.y, kf.d / 2, kf.grid);
         this._rebuildScene();
         return;
       }
@@ -898,7 +928,9 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       const c = this.floor.comps.find(x => x.id === this.drag.id);
       if (!c) return;
       if (!this.drag.moved) this._pushHistory();           // 拖移開始前存檔一次
-      c.x = Math.round(hit.x); c.y = Math.round(hit.y);
+      const f = this.floor;
+      c.x = this._snapToGrid(hit.x, f.w / 2, f.grid);
+      c.y = this._snapToGrid(hit.y, f.d / 2, f.grid);
       if (this.state.snap) this._applySnap(c);
       this.drag.moved = true;
       const mesh = this.meshById[c.id];
@@ -919,11 +951,12 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       this._pushHistory();
       this._ndcFrom(e);
       const hit = this._planeHit() || { x: 0, y: 0 };
+      const f = this.floor;
       const c = {
         id: uid(), cat: data.cat, type: part.type,
         name: part.name, color: part.color,
         w: part.w, d: part.d, h: part.h,
-        x: Math.round(hit.x), y: Math.round(hit.y), z: 0,
+        x: this._snapToGrid(hit.x, f.w / 2, f.grid), y: this._snapToGrid(hit.y, f.d / 2, f.grid), z: 0,
         rot: 0, gap: '',
       };
       this.floor.comps.push(c);
@@ -978,6 +1011,8 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
     }
     _showMenu(c, e) {
       const m = this.el.menu;
+      const f = this.floor;
+      const round3 = v => +v.toFixed(3);
       m.innerHTML = `
         <h3>編輯元件 · ${c.cat}</h3>
         <div class="row"><label>名稱</label><input data-k="name" value="${this._esc(c.name)}"></div>
@@ -987,10 +1022,10 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
             <input data-k="d" type="number" value="${c.d}">
             <input data-k="h" type="number" value="${c.h}">
           </div></div>
-        <div class="row"><label>座標 X/Y/Z</label>
+        <div class="row"><label>座標 X/Y/Z（左下原點）</label>
           <div class="grid3">
-            <input data-k="x" type="number" value="${c.x}">
-            <input data-k="y" type="number" value="${c.y}">
+            <input data-k="x" type="number" step="${f.grid || 1}" value="${round3(this._toDatumX(c.x, f))}">
+            <input data-k="y" type="number" step="${f.grid || 1}" value="${round3(this._toDatumY(c.y, f))}">
             <input data-k="z" type="number" value="${c.z}">
           </div></div>
         <div class="row"><label>旋轉 °（繞 Y）</label><input data-k="rot" type="number" step="15" value="${c.rot || 0}"></div>
@@ -1009,10 +1044,11 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       const apply = () => {
         m.querySelectorAll('[data-k]').forEach(inp => {
           const k = inp.dataset.k;
-          if (['w', 'd', 'h', 'x', 'y', 'z', 'rot'].includes(k)) {
-            const v = parseFloat(inp.value);
-            if (isFinite(v)) c[k] = v;
-          } else c[k] = inp.value;
+          const v = parseFloat(inp.value);
+          if (k === 'x') { if (isFinite(v)) c.x = this._fromDatumX(v, f); }       // 左下原點 → 場景
+          else if (k === 'y') { if (isFinite(v)) c.y = this._fromDatumY(v, f); }
+          else if (['w', 'd', 'h', 'z', 'rot'].includes(k)) { if (isFinite(v)) c[k] = v; }
+          else c[k] = inp.value;
         });
         this._rebuildScene();
       };
@@ -1183,14 +1219,17 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
     // ===========================================================================
     exportBOM() {
       const esc = v => { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-      const lines = ['Floor,Cumulative Top,Floor WxD,Category,Component,W,D,H,X,Y,Z,Rotation,Footprint Area,Gap Note'];
+      // X/Y 以左下角原點為基準（與編輯器一致）
+      const lines = ['Floor,Cumulative Top,Floor WxD,Grid,Category,Component,W,D,H,X(LL),Y(LL),Z,Rotation,Footprint Area,Gap Note'];
       let cum = 0;
       this.state.floors.forEach(f => {
         cum += f.h;
-        if (!f.comps.length) { lines.push([f.name, cum.toFixed(2), `${f.w}x${f.d}`, '', '(empty)', '', '', '', '', '', '', '', '', ''].map(esc).join(',')); return; }
+        if (!f.comps.length) { lines.push([f.name, cum.toFixed(2), `${f.w}x${f.d}`, f.grid || 1, '', '(empty)', '', '', '', '', '', '', '', '', ''].map(esc).join(',')); return; }
         f.comps.forEach((c, i) => lines.push([
-          i === 0 ? f.name : '', i === 0 ? cum.toFixed(2) : '', i === 0 ? `${f.w}x${f.d}` : '',
-          c.cat, c.name, c.w, c.d, c.h, c.x, c.y, c.z || 0, c.rot || 0, (c.w * c.d).toFixed(1), c.gap || '',
+          i === 0 ? f.name : '', i === 0 ? cum.toFixed(2) : '', i === 0 ? `${f.w}x${f.d}` : '', i === 0 ? (f.grid || 1) : '',
+          c.cat, c.name, c.w, c.d, c.h,
+          (+this._toDatumX(c.x, f).toFixed(3)), (+this._toDatumY(c.y, f).toFixed(3)), c.z || 0, c.rot || 0,
+          (c.w * c.d).toFixed(1), c.gap || '',
         ].map(esc).join(',')));
       });
       const totalH = this.state.floors.reduce((s, f) => s + f.h, 0);
