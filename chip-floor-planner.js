@@ -54,6 +54,11 @@
 
   let _uid = 1;
   const uid = () => 'c' + (_uid++);
+  const bumpUid = (n) => { if (isFinite(n) && n + 1 > _uid) _uid = n + 1; };  // 避免還原後 id 撞號
+
+  // localStorage 鍵（進度儲存）
+  const LS_AUTO = 'chip-floorplanner:autosave';
+  const LS_SAVES = 'chip-floorplanner:saves';
 
   // ---------------------------------------------------------------------------
   // 1b. CSV 解析（支援雙引號內含逗號/換行）
@@ -136,6 +141,13 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
   .sel { background: #0f172a; color: #e2e8f0; border: 1px solid #475569; border-radius: 6px;
          padding: 5px 8px; font-size: 12px; cursor: pointer; }
   .hinttxt { font-size: 11px; color: #64748b; }
+  .toast { position: absolute; right: 12px; bottom: 42px; background: rgba(15,23,42,.92);
+           color: #86efac; border: 1px solid #334155; padding: 6px 12px; border-radius: 8px;
+           font-size: 12px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 45; }
+  .toast.on { opacity: 1; }
+  .save-row { display: flex; align-items: center; gap: 6px; padding: 5px 4px; border-bottom: 1px solid #334155; }
+  .sv-name { flex: 1; min-width: 0; font-size: 12px; line-height: 1.3; }
+  .sv-name small { color: #64748b; font-size: 10px; }
   .field { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #94a3b8; }
   .field input { width: 56px; background: #0f172a; color: #e2e8f0; border: 1px solid #475569;
                  border-radius: 5px; padding: 4px 6px; font-size: 12px; }
@@ -220,7 +232,9 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       this.state.activeFloor = 0;
       this.state.schemes = [{ name: '方案 1', floors: this.state.floors }];
       this._hist = { undo: [], redo: [] };
+      this._tryRestoreAuto();         // 還原上次自動存檔（若有）
       this._buildDOM();
+      this._syncToggles();            // 同步 DRC/標註/基準等 UI 狀態
       this._waitThree();
     }
 
@@ -271,6 +285,9 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
             <button class="btn" data-act="undo" title="復原 (Ctrl+Z)">↶</button>
             <button class="btn" data-act="redo" title="重做 (Ctrl+Y)">↷</button>
             <div class="sep"></div>
+            <button class="btn" data-act="save" title="儲存進度到瀏覽器">💾 儲存</button>
+            <button class="btn" data-act="load" title="載入已儲存的進度">📂 載入</button>
+            <div class="sep"></div>
             <div class="field">樓層 W<input data-fld="fw" type="number" min="10"></div>
             <div class="field">D<input data-fld="fd" type="number" min="10"></div>
             <div class="field">高<input data-fld="fh" type="number" min="1"></div>
@@ -304,6 +321,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
             <div class="badge"></div>
             <div class="hint">拖曳元件到此 · 左鍵選取/拖移(自動吸附) · R 旋轉(Shift+R 反向) · Del 刪除 · 右鍵編輯屬性 · 滾輪縮放</div>
             <div class="menu"></div>
+            <div class="toast"></div>
             <div class="panel"><span class="close" title="關閉">✕</span><div class="panel-body"></div></div>
           </div>
         </div>`;
@@ -318,6 +336,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
         drop: app.querySelector('.drop-hl'),
         panel: app.querySelector('.panel'),
         panelBody: app.querySelector('.panel-body'),
+        toast: app.querySelector('.toast'),
       };
       app.querySelector('.panel .close').onclick = () => this._toggleAnalysis(false);
 
@@ -409,6 +428,8 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       else if (act === 'view2d') this._setView('2D');
       else if (act === 'undo') this._undo();
       else if (act === 'redo') this._redo();
+      else if (act === 'save') this._saveNamed();
+      else if (act === 'load') this._showLoadMenu();
       else if (act === 'addfloor') {
         this._pushHistory();
         const w = Math.min(this.floor.w, this._maxW()), d = Math.min(this.floor.d, this._maxD());
@@ -595,6 +616,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       });
       this._runDRC();
       if (this.el.panel && this.el.panel.classList.contains('on')) this._renderAnalysis();
+      this._autoSave();
     }
 
     // 間隔標註：在元件上方以引線 + 文字標籤顯示 gap_note
@@ -1494,6 +1516,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
     _loadSchemes(schemes) {
       this._pushHistory();
       this.state.schemes = schemes;
+      this._reindexUid();
       this._applyScheme(0);
       this._renderSchemeSel();
     }
@@ -1536,6 +1559,121 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
     importJSON(json) {
       const o = typeof json === 'string' ? JSON.parse(json) : json;
       if (o && o.floors) this._loadSchemes([{ name: o.name || '方案 1', floors: o.floors }]);
+    }
+
+    // ===========================================================================
+    // 9. 進度儲存（localStorage：自動存檔 + 具名存檔）
+    // ===========================================================================
+    _lsGet(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+    _lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
+
+    // 序列化完整工作狀態
+    _serialize() {
+      return {
+        v: 1, savedAt: new Date().toISOString(),
+        schemes: this.state.schemes, activeScheme: this.state.activeScheme, activeFloor: this.state.activeFloor,
+        coordBasis: this.state.coordBasis, labels: this.state.labels,
+        drc: { minSpacing: this.state.drc.minSpacing, edgeMargin: this.state.drc.edgeMargin, on: this.state.drc.on, boundary: this.state.drc.boundary },
+      };
+    }
+    // 套用快照到 state（不碰場景，供初始化還原用）
+    _applySnapshot(s) {
+      if (!s || !Array.isArray(s.schemes) || !s.schemes.length) return false;
+      this.state.schemes = s.schemes;
+      this.state.activeScheme = Math.min(s.activeScheme || 0, s.schemes.length - 1);
+      this.state.floors = this.state.schemes[this.state.activeScheme].floors;
+      this.state.activeFloor = Math.min(s.activeFloor || 0, this.state.floors.length - 1);
+      this.state.coordBasis = s.coordBasis || 'LL';
+      this.state.labels = !!s.labels;
+      if (s.drc) Object.assign(this.state.drc, s.drc);
+      this.state.selected = null;
+      this._reindexUid();
+      return true;
+    }
+    // 掃描所有 id，把 uid 計數器推到最大值之後，避免新元件撞號
+    _reindexUid() {
+      let mx = 0;
+      (this.state.schemes || []).forEach(s => (s.floors || []).forEach(f => {
+        [...(f.comps || []), ...(f.keepouts || [])].forEach(o => {
+          const n = parseInt(String(o.id).replace(/\D/g, ''), 10); if (n > mx) mx = n;
+        });
+      }));
+      bumpUid(mx);
+    }
+    // 載入快照並刷新 UI/場景
+    _loadSnapshot(s) {
+      if (!this._applySnapshot(s)) return false;
+      this._syncToggles();
+      this._renderTabs(); this._renderSchemeSel(); this._syncFloorFields();
+      this._rebuildScene(); this._fitCamera();
+      return true;
+    }
+    _syncToggles() {
+      const set = (sel, on) => { const el = this.root.querySelector(sel); if (el) el.classList.toggle('on', on); };
+      const cb = this.root.querySelector('[data-fld="coordbasis"]'); if (cb) cb.value = this.state.coordBasis;
+      set('[data-act="drc"]', this.state.drc.on);
+      set('[data-act="labels"]', this.state.labels);
+      set('[data-act="snap"]', this.state.snap);
+    }
+    _setStatus(msg) {
+      const t = this.el.toast; if (!t) return;
+      t.textContent = msg; t.classList.add('on');
+      clearTimeout(this._toastT); this._toastT = setTimeout(() => t.classList.remove('on'), 2200);
+    }
+    // 自動存檔（防抖）
+    _autoSave() {
+      clearTimeout(this._autoT);
+      this._autoT = setTimeout(() => {
+        if (this._lsSet(LS_AUTO, this._serialize()))
+          this._setStatus('✓ 已自動儲存 ' + new Date().toLocaleTimeString());
+      }, 800);
+    }
+    // 初始化時還原自動存檔（在 _buildDOM 前呼叫，只動 state）
+    _tryRestoreAuto() {
+      const s = this._lsGet(LS_AUTO);
+      if (s) this._applySnapshot(s);
+    }
+    // 具名存檔
+    _saveNamed() {
+      const def = '進度 ' + new Date().toLocaleString();
+      const name = prompt('儲存進度名稱：', def);
+      if (!name) return;
+      const saves = this._lsGet(LS_SAVES) || {};
+      saves[name] = this._serialize();
+      if (this._lsSet(LS_SAVES, saves)) this._setStatus('✓ 已儲存「' + name + '」');
+      else alert('儲存失敗：瀏覽器儲存空間不足或被停用。');
+    }
+    // 載入清單彈出選單
+    _showLoadMenu() {
+      const saves = this._lsGet(LS_SAVES) || {};
+      const auto = this._lsGet(LS_AUTO);
+      const m = this.el.menu;
+      const fmt = t => (t || '').replace('T', ' ').slice(0, 19);
+      const entries = Object.entries(saves).sort((a, b) => (b[1].savedAt || '').localeCompare(a[1].savedAt || ''));
+      let html = `<h3>載入進度</h3>`;
+      if (auto) html += `<div class="save-row"><span class="sv-name">⟲ 自動存檔<br><small>${fmt(auto.savedAt)}</small></span><button class="btn" data-load="__auto__">載入</button></div>`;
+      if (!entries.length && !auto) html += `<div class="cat-desc" style="padding:6px 0">尚無已儲存的進度</div>`;
+      entries.forEach(([name]) => {
+        const sn = saves[name];
+        html += `<div class="save-row"><span class="sv-name">${this._esc(name)}<br><small>${fmt(sn.savedAt)}</small></span>`
+          + `<button class="btn" data-load="${this._esc(name)}">載入</button>`
+          + `<button class="btn danger" data-del="${this._esc(name)}">✕</button></div>`;
+      });
+      m.innerHTML = html;
+      const btn = this.root.querySelector('[data-act="load"]'), r = this.el.stage.getBoundingClientRect(), br = btn.getBoundingClientRect();
+      m.style.left = Math.max(4, Math.min(br.left - r.left, r.width - 250)) + 'px';
+      m.style.top = Math.max(4, br.bottom - r.top + 4) + 'px';
+      m.classList.add('on');
+      m.querySelectorAll('[data-load]').forEach(b => b.onclick = () => {
+        const key = b.dataset.load, snap = key === '__auto__' ? auto : saves[key];
+        this._pushHistory();
+        if (this._loadSnapshot(snap)) this._setStatus('✓ 已載入');
+        this._hideMenu();
+      });
+      m.querySelectorAll('[data-del]').forEach(b => b.onclick = (ev) => {
+        ev.stopPropagation();
+        delete saves[b.dataset.del]; this._lsSet(LS_SAVES, saves); this._showLoadMenu();
+      });
     }
   }
 
