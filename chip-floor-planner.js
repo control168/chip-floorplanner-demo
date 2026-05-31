@@ -207,6 +207,7 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
         snap: true,
         labels: false,
         measure: false,
+        drc: { on: false, minSpacing: 0, edgeMargin: 0, boundary: true },
         schemes: [],
         activeScheme: 0,
       };
@@ -270,6 +271,11 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
             <button class="btn" data-act="analysis">📐 疊構分析</button>
             <button class="btn" data-act="bom">📄 BOM</button>
             <button class="btn" data-act="measure">📏 量測</button>
+            <div class="sep"></div>
+            <button class="btn" data-act="drc">🛡 DRC</button>
+            <div class="field">間距≥<input data-fld="minspacing" type="number" min="0" step="0.5" value="0"></div>
+            <div class="field">邊距<input data-fld="edgemargin" type="number" min="0" step="0.5" value="0"></div>
+            <button class="btn" data-act="addko" title="新增禁置區 keep-out">＋禁置區</button>
           </div>
           <div class="tabs"></div>
           <div class="stage">
@@ -305,8 +311,11 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       });
       app.querySelectorAll('[data-fld]').forEach(inp => {
         inp.onchange = () => {
-          if (inp.dataset.fld === 'scheme') this._applyScheme(parseInt(inp.value, 10));
-          else this._editFloorField(inp.dataset.fld, parseFloat(inp.value));
+          const fld = inp.dataset.fld;
+          if (fld === 'scheme') this._applyScheme(parseInt(inp.value, 10));
+          else if (fld === 'minspacing') { this.state.drc.minSpacing = Math.max(0, parseFloat(inp.value) || 0); this._rebuildScene(); }
+          else if (fld === 'edgemargin') { this.state.drc.edgeMargin = Math.max(0, parseFloat(inp.value) || 0); this._rebuildScene(); }
+          else this._editFloorField(fld, parseFloat(inp.value));
         };
       });
 
@@ -396,6 +405,19 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       else if (act === 'analysis') this._toggleAnalysis();
       else if (act === 'bom') this._download('chip-bom.csv', this.exportBOM());
       else if (act === 'measure') this._toggleMeasure();
+      else if (act === 'drc') {
+        this.state.drc.on = !this.state.drc.on;
+        this.root.querySelector('[data-act="drc"]').classList.toggle('on', this.state.drc.on);
+        if (this.state.drc.on) this._toggleAnalysis(true);   // 開 DRC 同時開面板看違規
+        else this._rebuildScene();
+      }
+      else if (act === 'addko') {
+        this._pushHistory();
+        const f = this.floor;
+        if (!f.keepouts) f.keepouts = [];
+        f.keepouts.push({ id: uid(), x: 0, y: 0, w: 30, d: 30 });
+        this._rebuildScene();
+      }
       else if (act === 'fit') this._fitCamera();
       else if (act === 'clear') {
         this._pushHistory();
@@ -463,7 +485,8 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       this.floorGroup = new THREE.Group();   // 樓層底板
       this.labelGroup = new THREE.Group();   // 間隔標註
       this.measureGroup = new THREE.Group(); // 量測線
-      scene.add(this.floorGroup, this.compGroup, this.labelGroup, this.measureGroup);
+      this.koGroup = new THREE.Group();      // 禁置區 keep-out
+      scene.add(this.floorGroup, this.compGroup, this.labelGroup, this.measureGroup, this.koGroup);
 
       this.ray = new THREE.Raycaster();
       this.ndc = new THREE.Vector2();
@@ -499,6 +522,7 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       this._disposeGroup(this.floorGroup);
       this._disposeGroup(this.compGroup);
       this._disposeGroup(this.labelGroup);
+      this._disposeGroup(this.koGroup);
       this.meshById = {};
       this._labelN = 0;
 
@@ -528,8 +552,10 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
           this.meshById[c.id] = mesh;
           if (this.state.labels && c.gap) this._addLabel(c, baseY);
         });
+        // 禁置區 keep-out
+        (f.keepouts || []).forEach(k => this._makeKeepout(k, baseY, active, idx));
       });
-      this._checkCollisions();
+      this._runDRC();
       if (this.el.panel && this.el.panel.classList.contains('on')) this._renderAnalysis();
     }
 
@@ -602,6 +628,22 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       return mesh;
     }
 
+    _makeKeepout(k, baseY, active, idx) {
+      const h = Math.max(2, this.state.floors[idx].h * 0.6);
+      const geo = new THREE.BoxGeometry(k.w, h, k.d);
+      const mat = new THREE.MeshStandardMaterial({
+        color: '#ef4444', transparent: true, opacity: active ? 0.22 : 0.1,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(k.x, baseY + 0.4 + h / 2, k.y);
+      mesh.userData = { kind: 'keepout', id: k.id, floorIdx: idx };
+      mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+        new THREE.LineBasicMaterial({ color: '#ef4444' })));
+      this.koGroup.add(mesh);
+      return mesh;
+    }
+
     _disposeGroup(g) {
       for (let i = g.children.length - 1; i >= 0; i--) {
         const o = g.children[i];
@@ -614,7 +656,8 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
     }
 
     // ===========================================================================
-    // 5. 碰撞偵測（3D AABB，跨樓層）— 碰撞顯示亮紅色
+    // 5. DRC 設計規則檢查（含碰撞、最小間距、邊界包覆、禁置區）
+    //    碰撞=亮紅，其他 DRC 違規=琥珀色
     // ===========================================================================
     // 定向包圍盒（OBB）：僅繞 Y 軸旋轉，故 Y 區間不受旋轉影響、XZ 平面為旋轉矩形。
     _obb(c, idx) {
@@ -643,38 +686,84 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       }
       return true;
     }
-    _checkCollisions() {
-      const all = [];
-      this.state.floors.forEach((f, idx) =>
-        f.comps.forEach(c => all.push({ c, box: this._obb(c, idx) })));
-      const hit = new Set();
-      for (let i = 0; i < all.length; i++)
-        for (let j = i + 1; j < all.length; j++) {
-          const a = all[i].box, b = all[j].box;
-          const overlap = a.miny < b.maxy && a.maxy > b.miny && // Y 區間重疊
-                          this._overlapXZ(a, b);                 // XZ 旋轉矩形重疊
-          if (overlap) { hit.add(all[i].c.id); hit.add(all[j].c.id); }
+    _inflate(box, d) { return { cx: box.cx, cz: box.cz, hw: box.hw + d, hd: box.hd + d, cos: box.cos, sin: box.sin }; }
+    // 旋轉後四角是否都落在樓層邊界內縮 margin 的範圍
+    _withinFloor(c, f, margin) {
+      const a = (c.rot || 0) * Math.PI / 180, co = Math.cos(a), si = Math.sin(a);
+      const hx = c.w / 2, hz = c.d / 2, limX = f.w / 2 - margin, limZ = f.d / 2 - margin;
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        const lx = sx * hx, lz = sz * hz;
+        const wx = c.x + lx * co - lz * si, wz = c.y + lx * si + lz * co;
+        if (Math.abs(wx) > limX + 1e-6 || Math.abs(wz) > limZ + 1e-6) return false;
+      }
+      return true;
+    }
+    // 主檢查：碰撞 + 間距 + 邊界 + 禁置區
+    _runDRC() {
+      const drc = this.state.drc;
+      const minS = drc.on ? (drc.minSpacing || 0) : 0;
+      const items = [];
+      this.state.floors.forEach((f, idx) => f.comps.forEach(c => items.push({ c, idx, box: this._obb(c, idx) })));
+      const viol = [], red = new Set(), amber = new Set();
+
+      // 兩兩：碰撞（同一垂直層）/ 間距不足
+      for (let i = 0; i < items.length; i++)
+        for (let j = i + 1; j < items.length; j++) {
+          const A = items[i], B = items[j];
+          if (!(A.box.miny < B.box.maxy && A.box.maxy > B.box.miny)) continue; // Y 不重疊則不比較
+          if (this._overlapXZ(A.box, B.box)) {
+            red.add(A.c.id); red.add(B.c.id);
+            viol.push({ sev: 2, text: `碰撞重疊：${A.c.name} ✕ ${B.c.name}` });
+          } else if (minS > 0 && this._overlapXZ(this._inflate(A.box, minS / 2), this._inflate(B.box, minS / 2))) {
+            amber.add(A.c.id); amber.add(B.c.id);
+            viol.push({ sev: 1, text: `間距 < ${minS}：${A.c.name} ↔ ${B.c.name}` });
+          }
         }
+      // 邊界包覆
+      if (drc.on && drc.boundary) {
+        items.forEach(({ c, idx }) => {
+          const f = this.state.floors[idx];
+          if (!this._withinFloor(c, f, drc.edgeMargin || 0)) {
+            amber.add(c.id);
+            viol.push({ sev: 1, text: `超出邊界${drc.edgeMargin ? `(邊距${drc.edgeMargin})` : ''}：${c.name}（${f.name}）` });
+          }
+        });
+      }
+      // 禁置區
+      if (drc.on) {
+        this.state.floors.forEach((f, idx) => (f.keepouts || []).forEach(k => {
+          const kbox = { cx: k.x, cz: k.y, hw: k.w / 2, hd: k.d / 2, cos: 1, sin: 0 };
+          f.comps.forEach(c => {
+            if (this._overlapXZ(this._obb(c, idx), kbox)) {
+              amber.add(c.id);
+              viol.push({ sev: 1, text: `進入禁置區：${c.name}（${f.name}）` });
+            }
+          });
+        }));
+      }
+
       // 上色
-      let n = 0;
-      all.forEach(({ c }) => {
-        const mesh = this.meshById[c.id];
-        if (!mesh) return;
+      items.forEach(({ c }) => {
+        const mesh = this.meshById[c.id]; if (!mesh) return;
         const m = mesh.material;
-        if (hit.has(c.id)) {
-          m.color.set('#ff1133');                 // 亮紅
-          m.emissive.set('#ff1133');
-          m.emissiveIntensity = 0.85;
-          n++;
-        } else {
+        if (red.has(c.id)) { m.color.set('#ff1133'); m.emissive.set('#ff1133'); m.emissiveIntensity = 0.85; }
+        else if (amber.has(c.id)) { m.color.set('#f59e0b'); m.emissive.set('#f59e0b'); m.emissiveIntensity = 0.55; }
+        else {
           m.color.set(mesh.userData.baseColor);
           if (this.state.selected === c.id) { m.emissive.set('#1d4ed8'); m.emissiveIntensity = 0.4; }
           else { m.emissive.set('#000000'); m.emissiveIntensity = 0; }
         }
       });
-      const bad = n > 0;
-      this.el.badge.classList.toggle('bad', bad);
-      this.el.badge.textContent = bad ? `⚠ ${n} 個元件碰撞` : '✓ 無碰撞';
+
+      this._violations = viol;
+      const badge = this.el.badge;
+      if (drc.on) {
+        badge.classList.toggle('bad', viol.length > 0);
+        badge.textContent = viol.length ? `⚠ ${viol.length} 項 DRC 違規` : '✓ DRC 通過';
+      } else {
+        badge.classList.toggle('bad', red.size > 0);
+        badge.textContent = red.size ? `⚠ ${red.size} 個元件碰撞` : '✓ 無碰撞';
+      }
     }
 
     // ===========================================================================
@@ -759,10 +848,31 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       }
       return null;
     }
+    // 取作用樓層的禁置區（回傳資料物件）
+    _pickKeepout(e) {
+      if (!this.koGroup) return null;
+      this._ndcFrom(e);
+      const hits = this.ray.intersectObjects(this.koGroup.children, false);
+      for (const h of hits) {
+        const ud = h.object.userData;
+        if (ud.kind === 'keepout' && ud.floorIdx === this.state.activeFloor) {
+          const k = (this.floor.keepouts || []).find(x => x.id === ud.id);
+          if (k) return k;
+        }
+      }
+      return null;
+    }
 
     _onDown(e) {
       if (e.button !== 0) return;
       if (this.state.measure) { this._measurePick(this._pickComp(e, true)); return; }
+      const ko = this._pickKeepout(e);                       // 禁置區優先
+      if (ko) {
+        this.state.selected = null;
+        this.koDrag = { ko, moved: false };
+        this.controls.enabled = false;
+        return;
+      }
       const id = this._pickComp(e);
       if (id) {
         this.state.selected = id;
@@ -774,6 +884,13 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       }
     }
     _onMove(e) {
+      if (this.koDrag) {
+        this._ndcFrom(e); const hit = this._planeHit(); if (!hit) return;
+        if (!this.koDrag.moved) { this._pushHistory(); this.koDrag.moved = true; }
+        this.koDrag.ko.x = Math.round(hit.x); this.koDrag.ko.y = Math.round(hit.y);
+        this._rebuildScene();
+        return;
+      }
       if (!this.drag) return;
       this._ndcFrom(e);
       const hit = this._planeHit();
@@ -786,10 +903,11 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       this.drag.moved = true;
       const mesh = this.meshById[c.id];
       if (mesh) { mesh.position.x = c.x; mesh.position.z = c.y; }
-      this._checkCollisions();
+      this._runDRC();
     }
     _onUp() {
       if (this.drag) { this.drag = null; this.controls.enabled = true; }
+      if (this.koDrag) { this.koDrag = null; this.controls.enabled = true; }
     }
 
     _onDrop(e) {
@@ -816,12 +934,47 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
     // ---- 右鍵屬性編輯選單 ----
     _onContext(e) {
       e.preventDefault();
+      const ko = this._pickKeepout(e);                       // 禁置區：右鍵編輯/刪除
+      if (ko) { this._showKeepoutMenu(ko, e); return; }
       const id = this._pickComp(e);
       if (!id) { this._hideMenu(); return; }
       this.state.selected = id;
       this._rebuildScene();
       const c = this.floor.comps.find(x => x.id === id);
       this._showMenu(c, e);
+    }
+    _showKeepoutMenu(k, e) {
+      const m = this.el.menu;
+      m.innerHTML = `
+        <h3>禁置區 · Keep-out</h3>
+        <div class="row"><label>尺寸 W/D</label>
+          <div class="grid3">
+            <input data-kk="w" type="number" value="${k.w}">
+            <input data-kk="d" type="number" value="${k.d}">
+          </div></div>
+        <div class="row"><label>座標 X/Y</label>
+          <div class="grid3">
+            <input data-kk="x" type="number" value="${k.x}">
+            <input data-kk="y" type="number" value="${k.y}">
+          </div></div>
+        <div class="menu-actions">
+          <button class="btn danger" data-kact="del">刪除禁置區</button>
+        </div>`;
+      const r = this.el.stage.getBoundingClientRect();
+      m.style.left = Math.min(e.clientX - r.left + 6, r.width - 244) + 'px';
+      m.style.top = Math.min(e.clientY - r.top + 6, r.height - 200) + 'px';
+      m.classList.add('on');
+      let dirty = false;
+      m.querySelectorAll('[data-kk]').forEach(inp => inp.oninput = () => {
+        if (!dirty) { this._pushHistory(); dirty = true; }
+        const v = parseFloat(inp.value); if (isFinite(v)) k[inp.dataset.kk] = v;
+        this._rebuildScene();
+      });
+      m.querySelector('[data-kact="del"]').onclick = () => {
+        this._pushHistory();
+        this.floor.keepouts = (this.floor.keepouts || []).filter(x => x.id !== k.id);
+        this._hideMenu(); this._rebuildScene();
+      };
     }
     _showMenu(c, e) {
       const m = this.el.menu;
@@ -1008,6 +1161,12 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       const nComp = floors.reduce((s, f) => s + f.comps.length, 0);
       let html = `<h3>疊構分析 · Stack Analysis</h3>`;
       html += `<div class="total">總高度 <b>${totalH.toFixed(1)}</b>　樓層 <b>${floors.length}</b>　元件 <b>${nComp}</b></div>`;
+      if (this.state.drc.on) {
+        const v = this._violations || [];
+        html += `<h4>DRC 違規（${v.length}）</h4>`;
+        if (!v.length) html += `<div class="total" style="color:#86efac">✓ 全部通過（間距≥${this.state.drc.minSpacing}、邊距${this.state.drc.edgeMargin}）</div>`;
+        else html += '<table>' + v.map(x => `<tr><td>${x.sev >= 2 ? '🔴' : '🟠'}</td><td>${this._esc(x.text)}</td></tr>`).join('') + '</table>';
+      }
       html += `<h4>側視剖面 Cross-section</h4>` + this._crossSectionSVG();
       html += `<h4>面積利用率 Utilization</h4><table><tr><th>樓層</th><th>面積</th><th>利用率</th></tr>`;
       floors.forEach(f => {
