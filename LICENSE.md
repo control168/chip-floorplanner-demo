@@ -29,6 +29,9 @@
 7. **準據法與管轄**
    本條款以中華民國（台灣）法律為準據法；因本條款所生之爭議，雙方合意以台灣台北地方法院為第一審管轄法院。
 
+8. **第三方開源元件**
+   本軟體於執行時會載入第三方開源元件（Three.js 與其 OrbitControls 採 MIT 授權；SheetJS/xlsx 採 Apache-2.0 授權）。**該等第三方元件不受本專有授權拘束**，各依其原開源授權條款規範；本條款之專有授權**僅及於作者之原創部分**。第三方元件之著作權與授權聲明詳見 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)，本軟體保留並尊重之。
+
 **授權洽詢 / 取得授權：** control.tw@gmail.com
 
 ---
@@ -48,6 +51,8 @@
 6. **Disclaimer.** The Software is provided **"AS IS,"** without warranty of any kind, express or implied, including merchantability, fitness for a particular purpose, and non-infringement. To the maximum extent permitted by law, the Author shall not be liable for any direct, indirect, incidental, or consequential damages arising from use of or inability to use the Software.
 
 7. **Governing Law.** This License is governed by the laws of the Republic of China (Taiwan); the parties agree to the Taiwan Taipei District Court as the court of first instance for any dispute.
+
+8. **Third-Party Open-Source Components.** The Software loads third-party open-source components at runtime (Three.js and its OrbitControls under the MIT License; SheetJS/xlsx under Apache-2.0). **Those components are not subject to this proprietary license** and remain governed by their respective open-source licenses; this proprietary license **applies only to the Author's original work.** See [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md), whose copyright and license notices are retained and respected.
 
 **Authorization inquiries:** control.tw@gmail.com
 
