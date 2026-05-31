@@ -1,5 +1,10 @@
 /* =============================================================================
  * Chip Floor Planner  —  晶片堆疊樓層擺盤工具 (2D ⇄ 3D)
+ *
+ * Copyright © 2026 Curtis (control168 · control.tw@gmail.com). All Rights Reserved.
+ * 專有授權（非開源）：須經作者書面授權方得使用，且授權得由作者隨時撤銷。
+ * Proprietary — use only under the Author's written authorization, revocable at any
+ * time. 詳見 / See LICENSE.md or license.html. 授權洽詢：control.tw@gmail.com
  * -----------------------------------------------------------------------------
  * 可外掛的 Web Component。用法：
  *   <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>

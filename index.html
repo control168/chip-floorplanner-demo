@@ -16,7 +16,13 @@
     header button { background: #1e293b; color: #cbd5e1; border: 1px solid #334155;
                     border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
     header button:hover { background: #334155; }
+    header a#license { color: #94a3b8; font-size: 12px; text-decoration: none; padding: 6px 10px;
+                       border: 1px solid #334155; border-radius: 6px; }
+    header a#license:hover { color: #e2e8f0; border-color: #475569; }
     .embed { flex: 1; min-height: 0; }
+    footer { padding: 8px 18px; background: #0b1120; border-top: 1px solid #1e293b;
+             color: #475569; font-size: 11px; text-align: center; }
+    footer a { color: #64748b; }
   </style>
 
   <!-- 渲染引擎：Three.js（WebGL，最快 GPU 路徑）+ OrbitControls -->
@@ -35,8 +41,14 @@
       <div class="spacer"></div>
       <button id="export">匯出 JSON</button>
       <button id="import">匯入 JSON</button>
+      <a id="license" href="license.html" target="_blank" rel="noopener">授權 License</a>
     </header>
     <chip-floor-planner class="embed" id="planner"></chip-floor-planner>
+    <footer>
+      © 2026 Curtis (control168). 保留一切權利 All Rights Reserved ·
+      專有授權，須經授權方得使用，作者得隨時撤銷 ·
+      <a href="license.html" target="_blank" rel="noopener">授權條款 License</a>
+    </footer>
   </div>
 
   <script>
