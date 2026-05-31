@@ -167,6 +167,11 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
   canvas { display: block; width: 100%; height: 100%; }
   .hint { position: absolute; left: 12px; bottom: 10px; font-size: 11px; color: #64748b;
           background: rgba(15,23,42,.7); padding: 5px 9px; border-radius: 6px; pointer-events: none; }
+  .licbadge { position: absolute; right: 12px; bottom: 10px; font-size: 10px; color: #64748b;
+              background: rgba(15,23,42,.72); padding: 4px 9px; border-radius: 6px;
+              text-decoration: none; z-index: 30; border: 1px solid #1e293b; }
+  .licbadge:hover { color: #cbd5e1; border-color: #334155; }
+  .licbadge b { color: #94a3b8; font-weight: 600; }
   .badge { position: absolute; right: 12px; top: 12px; font-size: 12px; padding: 5px 11px;
            border-radius: 20px; background: #065f46; color: #d1fae5; pointer-events: none; }
   .badge.bad { background: #7f1d1d; color: #fecaca; }
@@ -327,6 +332,8 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
             <div class="hint">拖曳元件到此 · 左鍵選取/拖移(自動吸附) · R 旋轉(Shift+R 反向) · Del 刪除 · 右鍵編輯屬性 · 滾輪縮放</div>
             <div class="menu"></div>
             <div class="toast"></div>
+            <a class="licbadge" target="_blank" rel="noopener"
+               title="專有授權 — 須經作者授權方得使用，作者得隨時撤銷">© 2026 Curtis · <b>授權 License</b></a>
             <div class="panel"><span class="close" title="關閉">✕</span><div class="panel-body"></div></div>
           </div>
         </div>`;
@@ -344,6 +351,9 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
         toast: app.querySelector('.toast'),
       };
       app.querySelector('.panel .close').onclick = () => this._toggleAnalysis(false);
+      // 授權標記連結（可用 license-href 屬性覆寫，預設指向線上授權頁）
+      app.querySelector('.licbadge').href =
+        this.getAttribute('license-href') || 'https://control168.github.io/chip-floorplanner-demo/license.html';
 
       this._renderLibrary();
       this._renderTabs();
