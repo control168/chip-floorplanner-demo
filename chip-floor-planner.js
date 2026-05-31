@@ -75,16 +75,17 @@
   }
 
   // 內建標準範例規格表（TSMC CoWoS HBM 封裝堆疊，尺寸為示意 mm）
+  // 座標 x/y 以「左下角原點」為基準（與工具預設一致）；grid=格距(µm)
   const EXAMPLE_SPEC =
-`floor,floor_w,floor_d,floor_h,category,component,width,depth,height,x,y,z,rotation,gap_note
-Substrate Level,55,55,3,CoWoS,Package Substrate,55,55,3,0,0,0,0,Organic build-up substrate (BGA)
-Interposer Level,55,55,2.5,CoWoS,C4 Bump Array,50,50,0.5,0,0,0,0,Substrate-to-interposer C4 bumps
-Interposer Level,,,,CoWoS,Silicon Interposer,50,50,1.5,0,0,0.5,0,TSV silicon interposer (>1.2x reticle)
-Die/HBM Level,55,55,9,CoWoS,Logic Die (SoC/GPU),24,24,4,0,0,0,0,Main compute die (chiplet)
-Die/HBM Level,,,,CoWoS,HBM Stack 1,11,11,8,20,8,0,0,12-Hi DRAM cube; ~0.4mm to logic
-Die/HBM Level,,,,CoWoS,HBM Stack 2,11,11,8,20,-8,0,0,12-Hi DRAM cube
-Die/HBM Level,,,,CoWoS,HBM Stack 3,11,11,8,-20,8,0,0,12-Hi DRAM cube
-Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
+`floor,floor_w,floor_d,floor_h,grid,category,component,width,depth,height,x,y,z,rotation,gap_note
+Substrate Level,55,55,3,1,CoWoS,Package Substrate,55,55,3,27.5,27.5,0,0,Organic build-up substrate (BGA)
+Interposer Level,55,55,2.5,1,CoWoS,C4 Bump Array,50,50,0.5,27.5,27.5,0,0,Substrate-to-interposer C4 bumps
+Interposer Level,,,,,CoWoS,Silicon Interposer,50,50,1.5,27.5,27.5,0.5,0,TSV silicon interposer (>1.2x reticle)
+Die/HBM Level,55,55,9,1,CoWoS,Logic Die (SoC/GPU),24,24,4,27.5,27.5,0,0,Main compute die (chiplet)
+Die/HBM Level,,,,,CoWoS,HBM Stack 1,11,11,8,47.5,35.5,0,0,12-Hi DRAM cube; ~0.4mm to logic
+Die/HBM Level,,,,,CoWoS,HBM Stack 2,11,11,8,47.5,19.5,0,0,12-Hi DRAM cube
+Die/HBM Level,,,,,CoWoS,HBM Stack 3,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
+Die/HBM Level,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,19.5,0,0,12-Hi DRAM cube
 `;
 
   // ---------------------------------------------------------------------------
@@ -208,6 +209,7 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
         labels: false,
         measure: false,
         drc: { on: false, minSpacing: 0, edgeMargin: 0, boundary: true },
+        coordBasis: 'LL',
         schemes: [],
         activeScheme: 0,
       };
@@ -225,13 +227,16 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
     _addFloor(name, w, d, h, grid) {
       this.state.floors.push({ id: uid(), name, w, d, h, grid: grid || 1, comps: [] });
     }
-    // 座標轉換：場景中心原點 ⇄ 左下角原點（定位點）
-    _toDatumX(cx, f) { return cx + f.w / 2; }   // 場景 → 左下角相對
-    _toDatumY(cy, f) { return cy + f.d / 2; }
-    _fromDatumX(X, f) { return X - f.w / 2; }    // 左下角相對 → 場景
-    _fromDatumY(Y, f) { return Y - f.d / 2; }
-    // 吸附到格點（以左下角原點對齊，格距 = f.grid）
-    _snapToGrid(v, half, g) { g = g || 1; return Math.round((v + half) / g) * g - half; }
+    // 座標基準：'LL' 左下角原點（預設）/ 'center' 中心原點。回傳原點在場景中的座標。
+    _originX(f) { return this.state.coordBasis === 'center' ? 0 : -f.w / 2; }
+    _originY(f) { return this.state.coordBasis === 'center' ? 0 : -f.d / 2; }
+    _dispX(cx, f) { return cx - this._originX(f); }     // 場景 → 顯示座標
+    _dispY(cy, f) { return cy - this._originY(f); }
+    _storeX(X, f) { return X + this._originX(f); }      // 顯示座標 → 場景
+    _storeY(Y, f) { return Y + this._originY(f); }
+    _basisLabel() { return this.state.coordBasis === 'center' ? '中心' : '左下'; }
+    // 吸附到格點（對齊座標原點，格距 = f.grid）
+    _snapGrid(v, origin, g) { g = g || 1; return Math.round((v - origin) / g) * g + origin; }
     get floor() { return this.state.floors[this.state.activeFloor]; }
     _floorBaseY(idx) {
       let y = 0;
@@ -264,6 +269,10 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
             <div class="field">D<input data-fld="fd" type="number" min="10"></div>
             <div class="field">高<input data-fld="fh" type="number" min="1"></div>
             <div class="field">格距µm<input data-fld="grid" type="number" min="0.01" step="0.1"></div>
+            <select class="sel" data-fld="coordbasis" title="座標基準">
+              <option value="LL">座標基準：左下原點</option>
+              <option value="center">座標基準：中心原點</option>
+            </select>
             <div class="sep"></div>
             <button class="btn" data-act="addfloor">+ 新增樓層</button>
             <button class="btn on" data-act="snap">⌁ 吸附對齊</button>
@@ -323,6 +332,7 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
           if (fld === 'scheme') this._applyScheme(parseInt(inp.value, 10));
           else if (fld === 'minspacing') { this.state.drc.minSpacing = Math.max(0, parseFloat(inp.value) || 0); this._rebuildScene(); }
           else if (fld === 'edgemargin') { this.state.drc.edgeMargin = Math.max(0, parseFloat(inp.value) || 0); this._rebuildScene(); }
+          else if (fld === 'coordbasis') { this.state.coordBasis = inp.value; this._hideMenu(); this._rebuildScene(); }
           else this._editFloorField(fld, parseFloat(inp.value));
         };
       });
@@ -656,9 +666,9 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       return mesh;
     }
 
-    // 樓層定位原點（左下角 = 座標 0,0）：X(紅)/Y(綠) 軸指示 + 標籤
+    // 樓層定位原點（座標 0,0，預設左下角）：X(紅)/Y(綠) 軸指示 + 標籤
     _addDatum(f, baseY) {
-      const ox = -f.w / 2, oz = -f.d / 2, y = baseY + 0.5;
+      const ox = this._originX(f), oz = this._originY(f), y = baseY + 0.5;
       const len = Math.max(6, Math.min(f.w, f.d) * 0.16);
       const mk = (to, col) => this.floorGroup.add(new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(ox, y, oz), to]),
@@ -916,8 +926,8 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
         this._ndcFrom(e); const hit = this._planeHit(); if (!hit) return;
         if (!this.koDrag.moved) { this._pushHistory(); this.koDrag.moved = true; }
         const kf = this.floor;
-        this.koDrag.ko.x = this._snapToGrid(hit.x, kf.w / 2, kf.grid);
-        this.koDrag.ko.y = this._snapToGrid(hit.y, kf.d / 2, kf.grid);
+        this.koDrag.ko.x = this._snapGrid(hit.x, this._originX(kf), kf.grid);
+        this.koDrag.ko.y = this._snapGrid(hit.y, this._originY(kf), kf.grid);
         this._rebuildScene();
         return;
       }
@@ -929,8 +939,8 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       if (!c) return;
       if (!this.drag.moved) this._pushHistory();           // 拖移開始前存檔一次
       const f = this.floor;
-      c.x = this._snapToGrid(hit.x, f.w / 2, f.grid);
-      c.y = this._snapToGrid(hit.y, f.d / 2, f.grid);
+      c.x = this._snapGrid(hit.x, this._originX(f), f.grid);
+      c.y = this._snapGrid(hit.y, this._originY(f), f.grid);
       if (this.state.snap) this._applySnap(c);
       this.drag.moved = true;
       const mesh = this.meshById[c.id];
@@ -956,7 +966,7 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
         id: uid(), cat: data.cat, type: part.type,
         name: part.name, color: part.color,
         w: part.w, d: part.d, h: part.h,
-        x: this._snapToGrid(hit.x, f.w / 2, f.grid), y: this._snapToGrid(hit.y, f.d / 2, f.grid), z: 0,
+        x: this._snapGrid(hit.x, this._originX(f), f.grid), y: this._snapGrid(hit.y, this._originY(f), f.grid), z: 0,
         rot: 0, gap: '',
       };
       this.floor.comps.push(c);
@@ -1022,10 +1032,10 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
             <input data-k="d" type="number" value="${c.d}">
             <input data-k="h" type="number" value="${c.h}">
           </div></div>
-        <div class="row"><label>座標 X/Y/Z（左下原點）</label>
+        <div class="row"><label>座標 X/Y/Z（${this._basisLabel()}原點）</label>
           <div class="grid3">
-            <input data-k="x" type="number" step="${f.grid || 1}" value="${round3(this._toDatumX(c.x, f))}">
-            <input data-k="y" type="number" step="${f.grid || 1}" value="${round3(this._toDatumY(c.y, f))}">
+            <input data-k="x" type="number" step="${f.grid || 1}" value="${round3(this._dispX(c.x, f))}">
+            <input data-k="y" type="number" step="${f.grid || 1}" value="${round3(this._dispY(c.y, f))}">
             <input data-k="z" type="number" value="${c.z}">
           </div></div>
         <div class="row"><label>旋轉 °（繞 Y）</label><input data-k="rot" type="number" step="15" value="${c.rot || 0}"></div>
@@ -1045,8 +1055,8 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
         m.querySelectorAll('[data-k]').forEach(inp => {
           const k = inp.dataset.k;
           const v = parseFloat(inp.value);
-          if (k === 'x') { if (isFinite(v)) c.x = this._fromDatumX(v, f); }       // 左下原點 → 場景
-          else if (k === 'y') { if (isFinite(v)) c.y = this._fromDatumY(v, f); }
+          if (k === 'x') { if (isFinite(v)) c.x = this._storeX(v, f); }            // 顯示座標 → 場景
+          else if (k === 'y') { if (isFinite(v)) c.y = this._storeY(v, f); }
           else if (['w', 'd', 'h', 'z', 'rot'].includes(k)) { if (isFinite(v)) c[k] = v; }
           else c[k] = inp.value;
         });
@@ -1219,8 +1229,8 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
     // ===========================================================================
     exportBOM() {
       const esc = v => { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-      // X/Y 以左下角原點為基準（與編輯器一致）
-      const lines = ['Floor,Cumulative Top,Floor WxD,Grid,Category,Component,W,D,H,X(LL),Y(LL),Z,Rotation,Footprint Area,Gap Note'];
+      // X/Y 以目前座標基準（左下/中心）輸出，與編輯器一致
+      const lines = ['Floor,Cumulative Top,Floor WxD,Grid,Category,Component,W,D,H,X,Y,Z,Rotation,Footprint Area,Gap Note'];
       let cum = 0;
       this.state.floors.forEach(f => {
         cum += f.h;
@@ -1228,12 +1238,13 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
         f.comps.forEach((c, i) => lines.push([
           i === 0 ? f.name : '', i === 0 ? cum.toFixed(2) : '', i === 0 ? `${f.w}x${f.d}` : '', i === 0 ? (f.grid || 1) : '',
           c.cat, c.name, c.w, c.d, c.h,
-          (+this._toDatumX(c.x, f).toFixed(3)), (+this._toDatumY(c.y, f).toFixed(3)), c.z || 0, c.rot || 0,
+          (+this._dispX(c.x, f).toFixed(3)), (+this._dispY(c.y, f).toFixed(3)), c.z || 0, c.rot || 0,
           (c.w * c.d).toFixed(1), c.gap || '',
         ].map(esc).join(',')));
       });
       const totalH = this.state.floors.reduce((s, f) => s + f.h, 0);
-      lines.push('', '# Summary', `Total stack height,${totalH.toFixed(2)}`, `Floor count,${this.state.floors.length}`);
+      lines.push('', '# Summary', `Coordinate basis,${this.state.coordBasis === 'center' ? 'Center origin' : 'Lower-left origin'}`,
+        `Total stack height,${totalH.toFixed(2)}`, `Floor count,${this.state.floors.length}`);
       this.state.floors.forEach(f => lines.push(`Utilization ${esc(f.name)},${(this._floorUtil(f).util * 100).toFixed(1)}%`));
       return lines.join('\n');
     }
@@ -1357,6 +1368,7 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       const ci = {
         floor: col('floor', '樓層', 'layer'),
         fw: col('floor_w', 'floor_width'), fd: col('floor_d', 'floor_depth'), fh: col('floor_h', 'floor_height'),
+        grid: col('grid', 'floor_grid', '格距'),
         cat: col('category', '類別', 'cat'),
         name: col('component', 'name', '元件', '元件名稱'),
         w: col('width', 'w', '寬'), d: col('depth', 'd', '深'), h: col('height', 'h', '高', '厚'),
@@ -1373,7 +1385,7 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
       rows.slice(1).forEach(r => {
         let fname = str(r, ci.floor, ''); if (!fname) fname = lastFloor; else lastFloor = fname;
         if (!map.has(fname)) {
-          map.set(fname, { id: uid(), name: fname, w: num(r, ci.fw, 120), d: num(r, ci.fd, 120), h: num(r, ci.fh, 12), comps: [] });
+          map.set(fname, { id: uid(), name: fname, w: num(r, ci.fw, 120), d: num(r, ci.fd, 120), h: num(r, ci.fh, 12), grid: num(r, ci.grid, 1), comps: [] });
           order.push(fname);
         }
         const f = map.get(fname);
@@ -1383,7 +1395,7 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
         f.comps.push({
           id: uid(), cat, type: 'custom', name, color,
           w: num(r, ci.w, 10), d: num(r, ci.d, 10), h: num(r, ci.h, 2),
-          x: num(r, ci.x, 0), y: num(r, ci.y, 0), z: num(r, ci.z, 0),
+          x: this._storeX(num(r, ci.x, 0), f), y: this._storeY(num(r, ci.y, 0), f), z: num(r, ci.z, 0),
           rot: num(r, ci.rot, 0), gap: str(r, ci.gap, ''),
         });
       });
@@ -1419,14 +1431,15 @@ Die/HBM Level,,,,CoWoS,HBM Stack 4,11,11,8,-20,-8,0,0,12-Hi DRAM cube
 
     // 將目前設計匯出為 CSV 規格表（與匯入格式相容，可往返）
     exportSpecCSV() {
-      const head = 'floor,floor_w,floor_d,floor_h,category,component,width,depth,height,x,y,z,rotation,gap_note';
+      const head = 'floor,floor_w,floor_d,floor_h,grid,category,component,width,depth,height,x,y,z,rotation,gap_note';
       const esc = v => { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
       const lines = [head];
       this.state.floors.forEach(f => {
-        if (!f.comps.length) { lines.push([f.name, f.w, f.d, f.h, '', '', '', '', '', '', '', '', '', ''].map(esc).join(',')); return; }
+        if (!f.comps.length) { lines.push([f.name, f.w, f.d, f.h, f.grid || 1, '', '', '', '', '', '', '', '', '', ''].map(esc).join(',')); return; }
         f.comps.forEach((c, i) => lines.push([
-          i === 0 ? f.name : '', i === 0 ? f.w : '', i === 0 ? f.d : '', i === 0 ? f.h : '',
-          c.cat, c.name, c.w, c.d, c.h, c.x, c.y, c.z, c.rot || 0, c.gap || '',
+          i === 0 ? f.name : '', i === 0 ? f.w : '', i === 0 ? f.d : '', i === 0 ? f.h : '', i === 0 ? (f.grid || 1) : '',
+          c.cat, c.name, c.w, c.d, c.h,
+          (+this._dispX(c.x, f).toFixed(3)), (+this._dispY(c.y, f).toFixed(3)), c.z, c.rot || 0, c.gap || '',
         ].map(esc).join(',')));
       });
       return lines.join('\n');
