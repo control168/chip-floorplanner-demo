@@ -1011,7 +1011,8 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       }
       // 右鍵指向樓層 → 樓層設定選單（座標格距 / 間距 / 板厚…）
       const fi = this._pickFloor(e);
-      if (fi != null && fi !== this.state.activeFloor) {
+      if (fi == null) { this._hideMenu(); return; }          // 不在樓層上：不顯示選單
+      if (fi !== this.state.activeFloor) {
         this.state.activeFloor = fi; this.state.selected = null;
         this._renderTabs(); this._syncFloorFields(); this._rebuildScene();
       }
