@@ -1,6 +1,6 @@
 # Chip Floor Planner — Live Demo
 
-瀏覽器版**晶片堆疊樓層擺盤工具**（2D ⇄ 3D），面向 TSMC 3DFabric 之 CoWoS / InFO / SoIC 封裝疊構規劃。
+瀏覽器版**晶片堆疊樓層擺盤工具**（2D ⇄ 3D），面向 3DFabric 之 CoWoS / InFO / SoIC 封裝疊構規劃。
 
 > 此 repo 為**公開 demo 鏡像**（僅靜態檔），主開發倉庫為私有。
 
