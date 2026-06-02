@@ -11,14 +11,18 @@
 
 ## 嵌入到任何網站
 
+函式庫**自我託管（self-host）於 `vendor/`**，與本工具放在同一 server 路徑，不依賴外部 CDN（離線可用、版本固定）。把 `vendor/` 與 `chip-floor-planner.js` 一起放到你的網站後：
+
 ```html
-<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
-<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="vendor/three@0.128.0/three.min.js"></script>
+<script src="vendor/three@0.128.0/OrbitControls.js"></script>
+<script src="vendor/xlsx@0.18.5/xlsx.full.min.js"></script>
 <script src="chip-floor-planner.js"></script>
 
 <chip-floor-planner style="display:block;width:100%;height:600px"></chip-floor-planner>
 ```
+
+> `vendor/` 內含各函式庫的 `LICENSE`／`NOTICE`，散布時請整包保留。SheetJS（xlsx）為選用，未引入時仍可使用 CSV 規格表。
 
 ## 功能
 

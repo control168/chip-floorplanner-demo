@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>最小嵌入範例 · Chip Floor Planner</title>
 
-  <!-- ① 三個 CDN 相依（渲染 + Excel） -->
-  <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- ① 三個自我託管（self-host）相依（渲染 + Excel）—— 與本工具放在同一 server 路徑 -->
+  <script src="vendor/three@0.128.0/three.min.js"></script>
+  <script src="vendor/three@0.128.0/OrbitControls.js"></script>
+  <script src="vendor/xlsx@0.18.5/xlsx.full.min.js"></script>
   <!-- ② 工具本體 -->
   <script src="chip-floor-planner.js"></script>
 
@@ -23,11 +23,11 @@
 <body>
   <div class="wrap">
     <h1>把晶片堆疊擺盤工具嵌入任何網站</h1>
-    <p>引入三個 CDN 腳本與本工具後，只要放一個 <code>&lt;chip-floor-planner&gt;</code> 標籤（給定高度）即可：</p>
+    <p>把 <code>vendor/</code> 函式庫與本工具放到同一 server 路徑後，只要引入下列腳本，再放一個 <code>&lt;chip-floor-planner&gt;</code> 標籤（給定高度）即可：</p>
 
-    <pre>&lt;script src="https://unpkg.com/three@0.128.0/build/three.min.js"&gt;&lt;/script&gt;
-&lt;script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"&gt;&lt;/script&gt;
-&lt;script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"&gt;&lt;/script&gt;
+    <pre>&lt;script src="vendor/three@0.128.0/three.min.js"&gt;&lt;/script&gt;
+&lt;script src="vendor/three@0.128.0/OrbitControls.js"&gt;&lt;/script&gt;
+&lt;script src="vendor/xlsx@0.18.5/xlsx.full.min.js"&gt;&lt;/script&gt;
 &lt;script src="chip-floor-planner.js"&gt;&lt;/script&gt;
 
 &lt;chip-floor-planner style="display:block;width:100%;height:600px"&gt;&lt;/chip-floor-planner&gt;</pre>
@@ -36,7 +36,7 @@
     <chip-floor-planner style="display:block;width:100%;height:620px;border:1px solid #cbd5e1;border-radius:10px;overflow:hidden"></chip-floor-planner>
 
     <p style="color:#64748b;font-size:13px;margin-top:14px">
-      註：Three.js 為必要；SheetJS（xlsx）為選用，未引入時仍可使用 CSV 規格表。
+      註：Three.js 為必要；SheetJS（xlsx）為選用，未引入時仍可使用 CSV 規格表。函式庫皆自我託管於 <code>vendor/</code>，不依賴外部 CDN。
     </p>
   </div>
 </body>

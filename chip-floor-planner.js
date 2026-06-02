@@ -7,8 +7,8 @@
  * time. 詳見 / See LICENSE.md or license.html. 授權洽詢：control.tw@gmail.com
  * -----------------------------------------------------------------------------
  * 可外掛的 Web Component。用法：
- *   <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
- *   <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+ *   <script src="vendor/three@0.128.0/three.min.js"></script>
+ *   <script src="vendor/three@0.128.0/OrbitControls.js"></script>
  *   <script src="chip-floor-planner.js"></script>
  *   <chip-floor-planner></chip-floor-planner>
  *

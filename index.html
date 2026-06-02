@@ -25,11 +25,11 @@
     footer a { color: #64748b; }
   </style>
 
-  <!-- 渲染引擎：Three.js（WebGL，最快 GPU 路徑）+ OrbitControls -->
-  <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- 渲染引擎：Three.js（WebGL，最快 GPU 路徑）+ OrbitControls（自我託管 self-host） -->
+  <script src="vendor/three@0.128.0/three.min.js"></script>
+  <script src="vendor/three@0.128.0/OrbitControls.js"></script>
   <!-- Excel 讀寫：SheetJS（選用，支援 .xlsx 直接匯入/匯出） -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="vendor/xlsx@0.18.5/xlsx.full.min.js"></script>
   <!-- 本工具（可外掛 Web Component） -->
   <script src="chip-floor-planner.js"></script>
 </head>
