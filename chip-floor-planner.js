@@ -626,6 +626,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       this._disposeGroup(this.koGroup);
       this._clearCssLabels();
       this.meshById = {};
+      this.nameLabelById = {};       // 元件 id → 名稱標籤物件（拖移時即時跟隨）
       this._labelN = 0;
 
       this.state.floors.forEach((f, idx) => {
@@ -700,11 +701,14 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
         const s = 0.08;                                  // DOM px → 世界單位（縮小字體）
         obj.scale.set(s, s, s);
         this.cssLabelGroup.add(obj);
+        this.nameLabelById[c.id] = obj;                  // 供拖移時即時跟隨
         return;
       }
       // 退回：小尺寸 sprite（未載入 CSS3DRenderer 時，例如舊版嵌入）
       const pos = new THREE.Vector3(c.x, topY + 1.2, c.y);
-      this.labelGroup.add(this._makeLabel(c.name, pos, { fs: 18, k: 0.05 }));
+      const sp = this._makeLabel(c.name, pos, { fs: 18, k: 0.05 });
+      this.labelGroup.add(sp);
+      this.nameLabelById[c.id] = sp;
     }
     _clearCssLabels() {
       if (!this.cssLabelGroup) return;
@@ -1069,6 +1073,8 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       this.drag.moved = true;
       const mesh = this.meshById[c.id];
       if (mesh) { mesh.position.x = c.x; mesh.position.z = c.y; }
+      const lbl = this.nameLabelById && this.nameLabelById[c.id];   // 名稱標籤即時跟隨
+      if (lbl) { lbl.position.x = c.x; lbl.position.z = c.y; }
       this._runDRC();
     }
     _onUp() {
