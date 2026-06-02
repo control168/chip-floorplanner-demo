@@ -5,6 +5,7 @@ Set-Location $PSScriptRoot
 Write-Host "↓ three.js 0.128.0"
 Invoke-WebRequest "https://unpkg.com/three@0.128.0/build/three.min.js" -OutFile "three@0.128.0/three.min.js"
 Invoke-WebRequest "https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js" -OutFile "three@0.128.0/OrbitControls.js"
+Invoke-WebRequest "https://unpkg.com/three@0.128.0/examples/js/renderers/CSS3DRenderer.js" -OutFile "three@0.128.0/CSS3DRenderer.js"
 
 Write-Host "↓ SheetJS xlsx 0.18.5"
 Invoke-WebRequest "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" -OutFile "xlsx@0.18.5/xlsx.full.min.js"

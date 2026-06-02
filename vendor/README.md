@@ -10,6 +10,7 @@ vendor/
 ├── three@0.128.0/
 │   ├── three.min.js          ✅ 已自我託管（MIT）
 │   ├── OrbitControls.js      ✅ 已自我託管（MIT）
+│   ├── CSS3DRenderer.js      ✅ 已自我託管（MIT；元件名稱貼附頂面用）
 │   └── LICENSE               ✅ 已備（MIT，three.js authors）
 └── xlsx@0.18.5/
     ├── xlsx.full.min.js      ✅ 已自我託管（Apache-2.0）

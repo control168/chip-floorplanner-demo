@@ -165,6 +165,19 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
 
   .stage { flex: 1; position: relative; background: #0f172a; }
   canvas { display: block; width: 100%; height: 100%; }
+  /* CSS3D 圖層：覆蓋於 WebGL canvas 之上，但不攔截滑鼠（交給 OrbitControls） */
+  .css3d { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  /* 貼附於元件頂面的名稱標籤（CSS 特效：小字 + 半透明膠囊 + 陰影/微光） */
+  .cfp-name-label {
+    font: 600 13px/1 -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif;
+    color: #e2e8f0; white-space: nowrap; letter-spacing: .2px;
+    padding: 3px 7px; border-radius: 5px;
+    background: rgba(15,23,42,.72); border: 1px solid rgba(148,163,184,.55);
+    box-shadow: 0 1px 6px rgba(0,0,0,.45), inset 0 0 8px rgba(56,189,248,.12);
+    text-shadow: 0 1px 2px rgba(0,0,0,.6);
+    -webkit-backdrop-filter: blur(1px); backdrop-filter: blur(1px);
+    user-select: none; pointer-events: none; will-change: transform;
+  }
   .hint { position: absolute; left: 12px; bottom: 10px; font-size: 11px; color: #64748b;
           background: rgba(15,23,42,.7); padding: 5px 9px; border-radius: 6px; pointer-events: none; }
   .licbadge { position: absolute; right: 12px; bottom: 10px; font-size: 10px; color: #64748b;
@@ -230,6 +243,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
         selected: null,
         snap: true,
         labels: false,
+        names: false,
         measure: false,
         drc: { on: false, minSpacing: 0, edgeMargin: 0, boundary: true },
         coordBasis: 'LL',
@@ -309,6 +323,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
             <button class="btn" data-act="addfloor">+ 新增樓層</button>
             <button class="btn on" data-act="snap">⌁ 吸附對齊</button>
             <button class="btn" data-act="labels">🏷 間隔標註</button>
+            <button class="btn" data-act="names">🔖 元件名稱</button>
             <select class="sel" data-fld="scheme" title="設計方案" style="display:none"></select>
             <button class="btn" data-act="fit">⊹ 置中</button>
             <button class="btn danger" data-act="clear">清空本層</button>
@@ -458,6 +473,10 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
         this.state.labels = !this.state.labels;
         this.root.querySelector('[data-act="labels"]').classList.toggle('on', this.state.labels);
         this._rebuildScene();
+      } else if (act === 'names') {
+        this.state.names = !this.state.names;
+        this.root.querySelector('[data-act="names"]').classList.toggle('on', this.state.names);
+        this._rebuildScene();
       } else if (act === 'spec') this._pickSpec();
       else if (act === 'example') this._download('spec-example.csv', EXAMPLE_SPEC);
       else if (act === 'examplexlsx') this._downloadExampleXLSX();
@@ -528,6 +547,17 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       stage.appendChild(renderer.domElement);
       this.renderer = renderer;
 
+      // CSS3D 圖層（選用）：把元件名稱以真實 HTML/CSS 貼在元件頂面
+      if (THREE.CSS3DRenderer) {
+        const css = new THREE.CSS3DRenderer();
+        css.domElement.className = 'css3d';
+        stage.appendChild(css.domElement);
+        this.cssRenderer = css;
+        this.cssScene = new THREE.Scene();
+        this.cssLabelGroup = new THREE.Group();
+        this.cssScene.add(this.cssLabelGroup);
+      }
+
       const scene = new THREE.Scene();
       scene.background = new THREE.Color('#0f172a');
       this.scene = scene;
@@ -572,6 +602,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
         this._raf = requestAnimationFrame(loop);
         controls.update();
         renderer.render(scene, cam);
+        if (this.cssRenderer) this.cssRenderer.render(this.cssScene, cam);
       };
       loop();
     }
@@ -581,6 +612,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       const w = this.el.stage.clientWidth, h = this.el.stage.clientHeight;
       if (!w || !h) return;
       this.renderer.setSize(w, h, false);
+      if (this.cssRenderer) this.cssRenderer.setSize(w, h);
       this.cam.aspect = w / h;
       this.cam.updateProjectionMatrix();
     }
@@ -592,6 +624,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       this._disposeGroup(this.compGroup);
       this._disposeGroup(this.labelGroup);
       this._disposeGroup(this.koGroup);
+      this._clearCssLabels();
       this.meshById = {};
       this._labelN = 0;
 
@@ -625,6 +658,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
           this.compGroup.add(mesh);
           this.meshById[c.id] = mesh;
           if (this.state.labels && c.gap) this._addLabel(c, baseY, T);
+          if (this.state.names) this._addNameLabel(c, baseY, T);
         });
         // 禁置區 keep-out
         (f.keepouts || []).forEach(k => this._makeKeepout(k, baseY, active, idx));
@@ -650,8 +684,38 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       this.labelGroup.add(line);
       this.labelGroup.add(this._makeLabel(`${c.name}｜${c.gap}`, b));
     }
-    _makeLabel(text, pos) {
-      const fs = 30, pad = 10, dpr = 2;
+    // 元件名稱：以 CSS3D 把名稱「平躺貼附」在元件朝上的頂面、置中（小字）
+    _addNameLabel(c, baseY, T) {
+      const topY = baseY + (T != null ? T : 0.4) + (c.z || 0) + c.h;
+      // 優先：CSS3D（真實 HTML/CSS，貼在頂面上）
+      if (this.cssRenderer && THREE.CSS3DObject) {
+        const el = document.createElement('div');
+        el.className = 'cfp-name-label';
+        el.textContent = c.name;
+        const obj = new THREE.CSS3DObject(el);
+        obj.position.set(c.x, topY + 0.06, c.y);   // 緊貼頂面上方
+        obj.rotation.order = 'YXZ';
+        obj.rotation.y = (c.rot || 0) * Math.PI / 180;  // 跟著元件繞垂直軸旋轉
+        obj.rotation.x = -Math.PI / 2;                  // 平躺貼附於頂面
+        const s = 0.08;                                  // DOM px → 世界單位（縮小字體）
+        obj.scale.set(s, s, s);
+        this.cssLabelGroup.add(obj);
+        return;
+      }
+      // 退回：小尺寸 sprite（未載入 CSS3DRenderer 時，例如舊版嵌入）
+      const pos = new THREE.Vector3(c.x, topY + 1.2, c.y);
+      this.labelGroup.add(this._makeLabel(c.name, pos, { fs: 18, k: 0.05 }));
+    }
+    _clearCssLabels() {
+      if (!this.cssLabelGroup) return;
+      for (let i = this.cssLabelGroup.children.length - 1; i >= 0; i--) {
+        const o = this.cssLabelGroup.children[i];
+        if (o.element && o.element.parentNode) o.element.parentNode.removeChild(o.element);
+        this.cssLabelGroup.remove(o);
+      }
+    }
+    _makeLabel(text, pos, opts) {
+      const fs = (opts && opts.fs) || 30, pad = 10, dpr = 2;
       const cv = document.createElement('canvas');
       const ctx = cv.getContext('2d');
       ctx.font = `${fs}px -apple-system,"Segoe UI","Microsoft JhengHei",sans-serif`;
@@ -671,7 +735,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       const tex = new THREE.CanvasTexture(cv);
       tex.minFilter = THREE.LinearFilter;
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
-      const k = 0.085;                                  // 像素 → 世界單位
+      const k = (opts && opts.k) || 0.085;              // 像素 → 世界單位
       sp.scale.set(w * k, h * k, 1);
       sp.position.copy(pos); sp.position.y += h * k / 2 + 1;
       sp.renderOrder = 999;
@@ -1628,6 +1692,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       const cb = this.root.querySelector('[data-fld="coordbasis"]'); if (cb) cb.value = this.state.coordBasis;
       set('[data-act="drc"]', this.state.drc.on);
       set('[data-act="labels"]', this.state.labels);
+      set('[data-act="names"]', this.state.names);
       set('[data-act="snap"]', this.state.snap);
     }
     _setStatus(msg) {

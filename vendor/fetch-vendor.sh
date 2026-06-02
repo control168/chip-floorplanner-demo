@@ -6,6 +6,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 echo "↓ three.js 0.128.0"
 curl -fsSL "https://unpkg.com/three@0.128.0/build/three.min.js" -o "three@0.128.0/three.min.js"
 curl -fsSL "https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js" -o "three@0.128.0/OrbitControls.js"
+curl -fsSL "https://unpkg.com/three@0.128.0/examples/js/renderers/CSS3DRenderer.js" -o "three@0.128.0/CSS3DRenderer.js"
 
 echo "↓ SheetJS xlsx 0.18.5"
 curl -fsSL "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" -o "xlsx@0.18.5/xlsx.full.min.js"
