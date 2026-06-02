@@ -243,7 +243,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
         selected: null,
         snap: true,
         labels: false,
-        names: false,
+        names: true,
         measure: false,
         drc: { on: false, minSpacing: 0, edgeMargin: 0, boundary: true },
         coordBasis: 'LL',
@@ -1651,7 +1651,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       return {
         v: 1, savedAt: new Date().toISOString(),
         schemes: this.state.schemes, activeScheme: this.state.activeScheme, activeFloor: this.state.activeFloor,
-        coordBasis: this.state.coordBasis, labels: this.state.labels,
+        coordBasis: this.state.coordBasis, labels: this.state.labels, names: this.state.names,
         drc: { minSpacing: this.state.drc.minSpacing, edgeMargin: this.state.drc.edgeMargin, on: this.state.drc.on, boundary: this.state.drc.boundary },
       };
     }
@@ -1664,6 +1664,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       this.state.activeFloor = Math.min(s.activeFloor || 0, this.state.floors.length - 1);
       this.state.coordBasis = s.coordBasis || 'LL';
       this.state.labels = !!s.labels;
+      this.state.names = s.names === undefined ? true : !!s.names;   // 預設開啟；舊存檔無此欄位時亦視為開啟
       if (s.drc) Object.assign(this.state.drc, s.drc);
       this.state.selected = null;
       this._reindexUid();
