@@ -889,6 +889,11 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
           }
         });
       }
+      // 高度：元件占用高度（層內位移 z + 厚度 h）超出該層層高 → 會壓到上層
+      if (drc.on) items.forEach(({ c, idx }) => {
+        const f = this.state.floors[idx], occ = (c.z || 0) + c.h;
+        if (occ > f.h + 1e-6) { amber.add(c.id); viol.push({ sev: 1, text: `高度超出層高：${c.name}（高 ${+occ.toFixed(2)} > 層高 ${f.h}）` }); }
+      });
       // 禁置區（永遠檢查，不受 DRC 開關影響——放置禁置區即為明確約束）
       this.state.floors.forEach((f, idx) => (f.keepouts || []).forEach(k => {
         const kbox = { cx: k.x, cz: k.y, hw: k.w / 2, hd: k.d / 2, cos: 1, sin: 0 };

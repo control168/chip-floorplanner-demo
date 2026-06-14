@@ -239,6 +239,11 @@
         const f = this.state.floors[idx];
         if (!this._withinFloor(c, f, drc.edgeMargin || 0)) { amber.add(c.id); viol.push({ sev: 1, text: `超出邊界：${c.name}（${f.name}）` }); }
       });
+      // 高度：元件占用高度（層內位移 z + 厚度 h）超出該層層高 → 會壓到上層
+      if (drc.on) items.forEach(({ c, idx }) => {
+        const f = this.state.floors[idx], occ = (c.z || 0) + c.h;
+        if (occ > f.h + 1e-6) { amber.add(c.id); viol.push({ sev: 1, text: `高度超出層高：${c.name}（高 ${+occ.toFixed(2)} > 層高 ${f.h}）` }); }
+      });
       this.state.floors.forEach((f, idx) => (f.keepouts || []).forEach(k => {
         const kb = { cx: k.x, cz: k.y, hw: k.w / 2, hd: k.d / 2, cos: 1, sin: 0 };
         f.comps.forEach(c => { if (this._overlapXZ(this._obb(c, idx), kb)) { amber.add(c.id); koHit.add(k.id); viol.push({ sev: 1, text: `進入禁置區：${c.name}（${f.name}）` }); } });
