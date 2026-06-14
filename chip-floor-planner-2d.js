@@ -269,6 +269,7 @@
             <button class="btn" data-act="undo" title="復原 Ctrl+Z">↶</button>
             <button class="btn" data-act="redo" title="重做 Ctrl+Y">↷</button>
             <div class="sep"></div>
+            <button class="btn" data-act="new" title="清空並開新擺盤">🆕 新建</button>
             <button class="btn" data-act="save">💾 儲存</button>
             <button class="btn" data-act="load">📂 載入</button>
             <div class="sep"></div>
@@ -683,8 +684,21 @@
       else if (act === 'bom') this._download('chip-bom.csv', this.exportBOM());
       else if (act === 'expjson') this._download('chip-floorplan.json', this.exportJSON());
       else if (act === 'impjson') this._pickJSON();
+      else if (act === 'new') this._newPlan();
       else if (act === 'save') this._saveNamed();
       else if (act === 'load') this._showLoadMenu();
+    }
+    _newPlan() {
+      if (!confirm('清空目前的擺盤並開新檔？目前內容會被清除（可用 Ctrl+Z 復原）。')) return;
+      this._pushHistory();
+      this.state.floors = [];
+      this._addFloor('Substrate Level', 120, 120, 10);
+      this._addFloor('Interposer Level', 120, 120, 6);
+      this._addFloor('Die / HBM Level', 120, 120, 14);
+      this.state.activeFloor = 0; this.state.selected = null;
+      this.state.schemes = [{ name: '方案 1', floors: this.state.floors }]; this.state.activeScheme = 0;
+      this.state.view = 'top'; this._updateViewBtns();
+      this._render(); this._setStatus('✓ 已開新擺盤');
     }
     _delFloor(idx) {
       if (this.state.floors.length <= 1) return;

@@ -309,6 +309,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
             <button class="btn" data-act="undo" title="復原 (Ctrl+Z)">↶</button>
             <button class="btn" data-act="redo" title="重做 (Ctrl+Y)">↷</button>
             <div class="sep"></div>
+            <button class="btn" data-act="new" title="清空並開新擺盤">🆕 新建</button>
             <button class="btn" data-act="save" title="儲存進度到瀏覽器">💾 儲存</button>
             <button class="btn" data-act="load" title="載入已儲存的進度">📂 載入</button>
             <div class="sep"></div>
@@ -458,6 +459,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       else if (act === 'view2d') this._setView('2D');
       else if (act === 'undo') this._undo();
       else if (act === 'redo') this._redo();
+      else if (act === 'new') this._newPlan();
       else if (act === 'save') this._saveNamed();
       else if (act === 'load') this._showLoadMenu();
       else if (act === 'addfloor') {
@@ -501,6 +503,19 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
         this._pushHistory();
         this.floor.comps = []; this.state.selected = null; this._hideMenu(); this._rebuildScene();
       }
+    }
+    _newPlan() {
+      if (!confirm('清空目前的擺盤並開新檔？目前內容會被清除（可用 Ctrl+Z 復原）。')) return;
+      this._pushHistory();
+      this.state.floors = [];
+      this._addFloor('Substrate Level', 120, 120, 10);
+      this._addFloor('Interposer Level', 120, 120, 6);
+      this._addFloor('Die / HBM Level', 120, 120, 14);
+      this.state.activeFloor = 0; this.state.selected = null;
+      this.state.schemes = [{ name: '方案 1', floors: this.state.floors }]; this.state.activeScheme = 0;
+      this._hideMenu();
+      this._renderTabs(); this._renderSchemeSel(); this._syncFloorFields(); this._rebuildScene(); this._fitCamera();
+      this._setStatus('✓ 已開新擺盤');
     }
     _delFloor(idx) {
       if (this.state.floors.length <= 1) return;
