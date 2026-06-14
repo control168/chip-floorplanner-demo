@@ -16,6 +16,7 @@
   const LS_AUTO = 'chip-floorplanner:autosave';   // 與 WebGL 版共用自動存檔
   const LS_SAVES = 'chip-floorplanner:saves';
   const PAD = 10;                                   // SVG 圖面留白（model 單位）
+  const ISO = { A: 0.92, B: 0.5, ZE: 1.0 };         // 等角投影係數（繪製與反投影共用）
 
   let _uid = 1;
   const uid = () => 'c' + (_uid++);
@@ -184,6 +185,17 @@
       const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
       return { x: p.x - PAD - f.w / 2, y: p.y - PAD - f.d / 2 };
     }
+    // 等角反投影：螢幕點 + 指定高度 zRef → model 座標（在該 Z 平面上求解，再反轉視角）
+    _isoToModel(e, zRef) {
+      const ctm = this.el.svg.getScreenCTM(); if (!ctm) return { x: 0, y: 0 };
+      const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
+      const u = p.x / ISO.A;                          // wx - wy
+      const v = (p.y + zRef * ISO.ZE) / ISO.B;        // wx + wy
+      const wx = (u + v) / 2, wy = (v - u) / 2;
+      const vr = (this.state.isoRot || 0) * Math.PI / 180, cv = Math.cos(vr), sv = Math.sin(vr);
+      return { x: wx * cv + wy * sv, y: -wx * sv + wy * cv };   // 反轉視角旋轉
+    }
+    _compZc(idx, c) { return this._floorBaseY(idx) + this._slabT(this.state.floors[idx]) + (c.z || 0) + c.h / 2; }
 
     // ===========================================================================
     // DRC（與 WebGL 版同演算法）
@@ -417,7 +429,7 @@
     }
     // 等角(2.5D)：3D→等角投影、每方塊 3 面著色、畫家演算法排序，純 SVG
     _drawIso() {
-      const A = 0.92, B = 0.5, ZE = 1.0;                       // 等角投影係數 / Z 放大
+      const A = ISO.A, B = ISO.B, ZE = ISO.ZE;                 // 等角投影係數 / Z 放大
       const vr = (this.state.isoRot || 0) * Math.PI / 180, cv = Math.cos(vr), sv = Math.sin(vr);
       const iso = (X, Y, Z) => ({ x: (X - Y) * A, y: (X + Y) * B - Z * ZE });
       const drc = this._runDRC();
@@ -442,7 +454,9 @@
       let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
       boxes.forEach(bx => bx.top.concat(bx.bot).forEach(p => { if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x; if (p.y < miny) miny = p.y; if (p.y > maxy) maxy = p.y; }));
       const pad = 8;
-      this.el.svg.setAttribute('viewBox', `${(minx - pad).toFixed(1)} ${(miny - pad).toFixed(1)} ${(maxx - minx + 2 * pad).toFixed(1)} ${(maxy - miny + 2 * pad).toFixed(1)}`);
+      const fitVB = `${(minx - pad).toFixed(1)} ${(miny - pad).toFixed(1)} ${(maxx - minx + 2 * pad).toFixed(1)} ${(maxy - miny + 2 * pad).toFixed(1)}`;
+      this.el.svg.setAttribute('viewBox', (this.isoDrag && this._isoVB) ? this._isoVB : fitVB);   // 拖移中鎖定視框
+      if (!this.isoDrag) this._isoVB = fitVB;
       this.el.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
       const poly = (pts, fill, stroke, sw) => `<polygon points="${pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(' ')}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>`;
       let s = '';
@@ -553,9 +567,18 @@
     _onDown(e) {
       if (e.button !== 0) return;
       const compEl = e.target.closest('[data-comp-id]'), koEl = e.target.closest('[data-ko-id]');
-      if (this.state.view === 'iso') {                          // 等角：只選取，編輯走右側面板
-        if (compEl) { const id = compEl.dataset.compId; const fi = this.state.floors.findIndex(f => f.comps.some(c => c.id === id)); if (fi >= 0) this.state.activeFloor = fi; this.state.selected = id; }
-        else this.state.selected = null;
+      if (this.state.view === 'iso') {                          // 等角：可選取 + 拖移（反投影到樓層平面）
+        if (compEl) {
+          const id = compEl.dataset.compId, fi = this.state.floors.findIndex(f => f.comps.some(c => c.id === id));
+          if (fi >= 0) this.state.activeFloor = fi;
+          this.state.selected = id;
+          const c = this.floor.comps.find(x => x.id === id);
+          if (c) {
+            const zc = this._compZc(this.state.activeFloor, c), gm = this._isoToModel(e, zc);
+            this.isoDrag = { id, zc, ox: c.x - gm.x, oy: c.y - gm.y, moved: false };
+            try { this.el.svg.setPointerCapture(e.pointerId); } catch (err) {}
+          }
+        } else this.state.selected = null;
         this._render(); return;
       }
       if (compEl) {
@@ -568,6 +591,15 @@
     }
     _onMove(e) {
       const f = this.floor;
+      if (this.isoDrag) {
+        const c = f.comps.find(x => x.id === this.isoDrag.id); if (!c) return;
+        if (!this.isoDrag.moved) { this._pushHistory(); this.isoDrag.moved = true; }
+        const gm = this._isoToModel(e, this.isoDrag.zc);
+        c.x = this._snapGrid(gm.x + this.isoDrag.ox, this._originX(f), f.grid);
+        c.y = this._snapGrid(gm.y + this.isoDrag.oy, this._originZ(f), f.grid);
+        if (this.state.snap) this._applySnap(c);
+        this._render(); return;
+      }
       if (this.koDrag) {
         const m = this._pointerModel(e); if (!this.koDrag.moved) { this._pushHistory(); this.koDrag.moved = true; }
         const k = (f.keepouts || []).find(x => x.id === this.koDrag.id); if (!k) return;
@@ -580,7 +612,10 @@
       if (this.state.snap) this._applySnap(c);
       this._render();
     }
-    _onUp() { this.drag = null; this.koDrag = null; }
+    _onUp() {
+      this.drag = null; this.koDrag = null;
+      if (this.isoDrag) { this.isoDrag = null; this._isoVB = null; this._render(); }   // 放開後重新置中
+    }
     _applySnap(c) {
       const T = 2.5, f = this.floor, others = f.comps.filter(o => o.id !== c.id);
       const wh = o => { const a = (o.rot || 0) * Math.PI / 180, co = Math.abs(Math.cos(a)), si = Math.abs(Math.sin(a)); return { hx: o.w / 2 * co + o.d / 2 * si, hz: o.w / 2 * si + o.d / 2 * co }; };
@@ -593,7 +628,10 @@
     _onDrop(e) {
       e.preventDefault(); this.el.drop.classList.remove('on');
       let data; try { data = JSON.parse(e.dataTransfer.getData('text/plain')); } catch (err) { return; }
-      const m = this._pointerModel(e); this._addPart(data.cat, data.i, m.x, m.y);
+      let m;
+      if (this.state.view === 'iso') { const zr = this._floorBaseY(this.state.activeFloor) + this._slabT(this.floor); m = this._isoToModel(e, zr); }
+      else m = this._pointerModel(e);
+      this._addPart(data.cat, data.i, m.x, m.y);
     }
     _addPart(cat, i, mx, my) {
       const part = CATALOG[cat] && CATALOG[cat].parts[i]; if (!part) return;
