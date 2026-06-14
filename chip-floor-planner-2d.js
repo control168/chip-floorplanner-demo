@@ -15,6 +15,7 @@
 
   const LS_AUTO = 'chip-floorplanner:autosave';   // 與 WebGL 版共用自動存檔
   const LS_SAVES = 'chip-floorplanner:saves';
+  const LS_PREV = 'chip-floorplanner:previous';   // 新建/載入前的自動備份「上一份」
   const PAD = 10;                                   // SVG 圖面留白（model 單位）
   const ISO = { A: 0.92, B: 0.5, ZE: 1.0 };         // 等角投影係數（繪製與反投影共用）
 
@@ -131,6 +132,17 @@
   .props .actions { display: flex; gap: 6px; margin-top: 10px; }
   .props .actions .btn { flex: 1; text-align: center; }
   .note { font-size: 10px; color: #475569; margin-top: 14px; border-top: 1px dashed #334155; padding-top: 10px; line-height: 1.5; }
+  .modal { position: absolute; inset: 0; background: rgba(2,6,23,.6); display: none; align-items: center; justify-content: center; z-index: 60; }
+  .modal.on { display: flex; }
+  .modal .box { background: #1e293b; border: 1px solid #475569; border-radius: 12px; padding: 18px 20px; width: 330px; box-shadow: 0 16px 50px rgba(0,0,0,.5); }
+  .modal h3 { margin: 0 0 6px; font-size: 15px; color: #f1f5f9; }
+  .modal p { font-size: 12px; color: #94a3b8; margin: 0 0 14px; line-height: 1.5; }
+  .modal .opt { display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 8px; background: #0f172a; border: 1px solid #334155; cursor: pointer; color: #e2e8f0; margin-bottom: 8px; }
+  .modal .opt:hover { border-color: #3b82f6; background: #16233b; }
+  .modal .opt b { display: block; font-size: 13px; }
+  .modal .opt small { color: #64748b; font-size: 11px; }
+  .modal .cancel { margin-top: 6px; text-align: center; color: #94a3b8; cursor: pointer; font-size: 12px; padding: 6px; }
+  .modal .cancel:hover { color: #e2e8f0; }
   `;
 
   class ChipFloorPlanner2D extends HTMLElement {
@@ -300,6 +312,14 @@
               <div class="hint">左鍵選取/拖移(吸附) · 拖元件庫到此新增 · 右側面板編輯 · Del 刪除（不需右鍵，RBI 友善）</div>
               <a class="licbadge" target="_blank" rel="noopener" title="專有授權 — 須經作者授權方得使用，作者得隨時撤銷">© 2026 Curtis · 授權</a>
               <div class="toast"></div>
+              <div class="modal"><div class="box">
+                <h3>開新擺盤</h3>
+                <p>選擇範本。目前設計會自動備份到「上一份」，可於「📂 載入」輸入 <b>prev</b> 找回。</p>
+                <button class="opt" data-tpl="blank"><b>空白</b><small>單一空樓層，從零開始</small></button>
+                <button class="opt" data-tpl="default"><b>預設 3 層</b><small>Substrate / Interposer / Die（無元件）</small></button>
+                <button class="opt" data-tpl="example"><b>CoWoS 範例</b><small>TSMC CoWoS HBM 疊構（含元件）</small></button>
+                <div class="cancel">取消</div>
+              </div></div>
             </div>
             <div class="props"></div>
           </div>
@@ -308,9 +328,12 @@
       this.el = {
         lib: app.querySelector('.lib'), tabs: app.querySelector('.tabs'), stage: app.querySelector('.stage'),
         svg: app.querySelector('svg.canvas'), badge: app.querySelector('.badge'), drop: app.querySelector('.drop'),
-        props: app.querySelector('.props'), toast: app.querySelector('.toast'), menu: null,
+        props: app.querySelector('.props'), toast: app.querySelector('.toast'), menu: null, modal: app.querySelector('.modal'),
       };
       app.querySelector('.licbadge').href = this.getAttribute('license-href') || 'https://control168.github.io/chip-floorplanner-demo/license.html';
+      app.querySelectorAll('.modal [data-tpl]').forEach(b => b.onclick = () => this._doNew(b.dataset.tpl));
+      app.querySelector('.modal .cancel').onclick = () => this._hideModal();
+      app.querySelector('.modal').onclick = e => { if (e.target.classList.contains('modal')) this._hideModal(); };
       this._renderLibrary();
       app.querySelectorAll('[data-act]').forEach(b => b.onclick = () => this._toolbar(b.dataset.act));
       const cb = app.querySelector('[data-fld="coordbasis"]'); cb.value = this.state.coordBasis;
@@ -688,17 +711,25 @@
       else if (act === 'save') this._saveNamed();
       else if (act === 'load') this._showLoadMenu();
     }
-    _newPlan() {
-      if (!confirm('清空目前的擺盤並開新檔？目前內容會被清除（可用 Ctrl+Z 復原）。')) return;
+    _newPlan() { this.el.modal.classList.add('on'); }
+    _hideModal() { this.el.modal.classList.remove('on'); }
+    _backupPrev() { try { localStorage.setItem(LS_PREV, JSON.stringify(this._serialize())); } catch (e) {} }
+    _doNew(tpl) {
+      this._hideModal();
+      this._backupPrev();                                   // 先備份目前到「上一份」
+      if (tpl === 'example') {
+        fetch('spec-example.csv').then(r => r.text()).then(t => { this.importSpecCSV(t); this.state.view = 'top'; this._updateViewBtns(); this._render(); this._setStatus('✓ 已載入 CoWoS 範例'); })
+          .catch(() => alert('找不到 spec-example.csv'));
+        return;
+      }
       this._pushHistory();
       this.state.floors = [];
-      this._addFloor('Substrate Level', 120, 120, 10);
-      this._addFloor('Interposer Level', 120, 120, 6);
-      this._addFloor('Die / HBM Level', 120, 120, 14);
+      if (tpl === 'blank') this._addFloor('Layer 1', 120, 120, 10);
+      else { this._addFloor('Substrate Level', 120, 120, 10); this._addFloor('Interposer Level', 120, 120, 6); this._addFloor('Die / HBM Level', 120, 120, 14); }
       this.state.activeFloor = 0; this.state.selected = null;
       this.state.schemes = [{ name: '方案 1', floors: this.state.floors }]; this.state.activeScheme = 0;
       this.state.view = 'top'; this._updateViewBtns();
-      this._render(); this._setStatus('✓ 已開新擺盤');
+      this._render(); this._setStatus(tpl === 'blank' ? '✓ 已開空白擺盤' : '✓ 已開預設擺盤');
     }
     _delFloor(idx) {
       if (this.state.floors.length <= 1) return;
@@ -792,12 +823,14 @@
     _setStatus(m) { const t = this.el.toast; if (!t) return; t.textContent = m; t.classList.add('on'); clearTimeout(this._toastT); this._toastT = setTimeout(() => t.classList.remove('on'), 2000); }
     _saveNamed() { const name = prompt('儲存進度名稱：', '進度 ' + new Date().toLocaleString()); if (!name) return; const saves = this._lsGet(LS_SAVES) || {}; saves[name] = this._serialize(); if (this._lsSet(LS_SAVES, saves)) this._setStatus('✓ 已儲存「' + name + '」'); else alert('儲存失敗'); }
     _showLoadMenu() {
-      const saves = this._lsGet(LS_SAVES) || {}, auto = this._lsGet(LS_AUTO);
+      const saves = this._lsGet(LS_SAVES) || {}, auto = this._lsGet(LS_AUTO), prev = this._lsGet(LS_PREV);
       const names = Object.keys(saves);
-      const pick = prompt('輸入要載入的進度名稱（或 auto 載入自動存檔）：\n' + (auto ? 'auto — 自動存檔\n' : '') + names.map(n => '• ' + n).join('\n'));
+      const pick = prompt('輸入要載入的進度名稱：\n' + (auto ? 'auto — 自動存檔\n' : '') + (prev ? 'prev — 上一份（新建/載入前備份）\n' : '') + names.map(n => '• ' + n).join('\n'));
       if (!pick) return;
-      const snap = pick.trim().toLowerCase() === 'auto' ? auto : saves[pick.trim()];
+      const key = pick.trim().toLowerCase();
+      const snap = key === 'auto' ? auto : key === 'prev' ? prev : saves[pick.trim()];
       if (!snap) { alert('找不到該進度'); return; }
+      this._backupPrev();                                   // 載入前先備份目前
       this._pushHistory(); if (this._applySnapshot(snap)) { this._syncToggles(); this._render(); this._setStatus('✓ 已載入'); }
     }
 

@@ -64,6 +64,7 @@
   // localStorage 鍵（進度儲存）
   const LS_AUTO = 'chip-floorplanner:autosave';
   const LS_SAVES = 'chip-floorplanner:saves';
+  const LS_PREV = 'chip-floorplanner:previous';   // 新建/載入前的自動備份「上一份」
 
   // ---------------------------------------------------------------------------
   // 1b. CSV 解析（支援雙引號內含逗號/換行）
@@ -153,6 +154,17 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
   .save-row { display: flex; align-items: center; gap: 6px; padding: 5px 4px; border-bottom: 1px solid #334155; }
   .sv-name { flex: 1; min-width: 0; font-size: 12px; line-height: 1.3; }
   .sv-name small { color: #64748b; font-size: 10px; }
+  .modal { position: absolute; inset: 0; background: rgba(2,6,23,.6); display: none; align-items: center; justify-content: center; z-index: 60; }
+  .modal.on { display: flex; }
+  .modal .box { background: #1e293b; border: 1px solid #475569; border-radius: 12px; padding: 18px 20px; width: 330px; box-shadow: 0 16px 50px rgba(0,0,0,.5); }
+  .modal h3 { margin: 0 0 6px; font-size: 15px; color: #f1f5f9; }
+  .modal p { font-size: 12px; color: #94a3b8; margin: 0 0 14px; line-height: 1.5; }
+  .modal .opt { display: block; width: 100%; text-align: left; padding: 10px 12px; border-radius: 8px; background: #0f172a; border: 1px solid #334155; cursor: pointer; color: #e2e8f0; margin-bottom: 8px; }
+  .modal .opt:hover { border-color: #3b82f6; background: #16233b; }
+  .modal .opt b { display: block; font-size: 13px; }
+  .modal .opt small { color: #64748b; font-size: 11px; }
+  .modal .cancel { margin-top: 6px; text-align: center; color: #94a3b8; cursor: pointer; font-size: 12px; padding: 6px; }
+  .modal .cancel:hover { color: #e2e8f0; }
   .field { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #94a3b8; }
   .field input { width: 56px; background: #0f172a; color: #e2e8f0; border: 1px solid #475569;
                  border-radius: 5px; padding: 4px 6px; font-size: 12px; }
@@ -350,6 +362,14 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
             <div class="toast"></div>
             <a class="licbadge" target="_blank" rel="noopener"
                title="專有授權 — 須經作者授權方得使用，作者得隨時撤銷">© 2026 Curtis · <b>授權 License</b></a>
+            <div class="modal"><div class="box">
+              <h3>開新擺盤</h3>
+              <p>選擇範本。目前設計會自動備份到「上一份」，可於「📂 載入」選取找回。</p>
+              <button class="opt" data-tpl="blank"><b>空白</b><small>單一空樓層，從零開始</small></button>
+              <button class="opt" data-tpl="default"><b>預設 3 層</b><small>Substrate / Interposer / Die（無元件）</small></button>
+              <button class="opt" data-tpl="example"><b>CoWoS 範例</b><small>TSMC CoWoS HBM 疊構（含元件）</small></button>
+              <div class="cancel">取消</div>
+            </div></div>
             <div class="panel"><span class="close" title="關閉">✕</span><div class="panel-body"></div></div>
           </div>
         </div>`;
@@ -365,8 +385,12 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
         panel: app.querySelector('.panel'),
         panelBody: app.querySelector('.panel-body'),
         toast: app.querySelector('.toast'),
+        modal: app.querySelector('.modal'),
       };
       app.querySelector('.panel .close').onclick = () => this._toggleAnalysis(false);
+      app.querySelectorAll('.modal [data-tpl]').forEach(b => b.onclick = () => this._doNew(b.dataset.tpl));
+      app.querySelector('.modal .cancel').onclick = () => this._hideModal();
+      app.querySelector('.modal').onclick = e => { if (e.target.classList.contains('modal')) this._hideModal(); };
       // 授權標記連結（可用 license-href 屬性覆寫，預設指向線上授權頁）
       app.querySelector('.licbadge').href =
         this.getAttribute('license-href') || 'https://control168.github.io/chip-floorplanner-demo/license.html';
@@ -504,18 +528,26 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
         this.floor.comps = []; this.state.selected = null; this._hideMenu(); this._rebuildScene();
       }
     }
-    _newPlan() {
-      if (!confirm('清空目前的擺盤並開新檔？目前內容會被清除（可用 Ctrl+Z 復原）。')) return;
+    _newPlan() { this.el.modal.classList.add('on'); }
+    _hideModal() { this.el.modal.classList.remove('on'); }
+    _backupPrev() { try { localStorage.setItem(LS_PREV, JSON.stringify(this._serialize())); } catch (e) {} }
+    _doNew(tpl) {
+      this._hideModal();
+      this._backupPrev();
+      if (tpl === 'example') {
+        fetch('spec-example.csv').then(r => r.text()).then(t => { this.importSpecCSV(t); this._setStatus('✓ 已載入 CoWoS 範例'); })
+          .catch(() => alert('找不到 spec-example.csv'));
+        return;
+      }
       this._pushHistory();
       this.state.floors = [];
-      this._addFloor('Substrate Level', 120, 120, 10);
-      this._addFloor('Interposer Level', 120, 120, 6);
-      this._addFloor('Die / HBM Level', 120, 120, 14);
+      if (tpl === 'blank') this._addFloor('Layer 1', 120, 120, 10);
+      else { this._addFloor('Substrate Level', 120, 120, 10); this._addFloor('Interposer Level', 120, 120, 6); this._addFloor('Die / HBM Level', 120, 120, 14); }
       this.state.activeFloor = 0; this.state.selected = null;
       this.state.schemes = [{ name: '方案 1', floors: this.state.floors }]; this.state.activeScheme = 0;
       this._hideMenu();
       this._renderTabs(); this._renderSchemeSel(); this._syncFloorFields(); this._rebuildScene(); this._fitCamera();
-      this._setStatus('✓ 已開新擺盤');
+      this._setStatus(tpl === 'blank' ? '✓ 已開空白擺盤' : '✓ 已開預設擺盤');
     }
     _delFloor(idx) {
       if (this.state.floors.length <= 1) return;
@@ -1764,12 +1796,14 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
     _showLoadMenu() {
       const saves = this._lsGet(LS_SAVES) || {};
       const auto = this._lsGet(LS_AUTO);
+      const prev = this._lsGet(LS_PREV);
       const m = this.el.menu;
       const fmt = t => (t || '').replace('T', ' ').slice(0, 19);
       const entries = Object.entries(saves).sort((a, b) => (b[1].savedAt || '').localeCompare(a[1].savedAt || ''));
       let html = `<h3>載入進度</h3>`;
+      if (prev) html += `<div class="save-row"><span class="sv-name">↩ 上一份（新建/載入前備份）<br><small>${fmt(prev.savedAt)}</small></span><button class="btn" data-load="__prev__">載入</button></div>`;
       if (auto) html += `<div class="save-row"><span class="sv-name">⟲ 自動存檔<br><small>${fmt(auto.savedAt)}</small></span><button class="btn" data-load="__auto__">載入</button></div>`;
-      if (!entries.length && !auto) html += `<div class="cat-desc" style="padding:6px 0">尚無已儲存的進度</div>`;
+      if (!entries.length && !auto && !prev) html += `<div class="cat-desc" style="padding:6px 0">尚無已儲存的進度</div>`;
       entries.forEach(([name]) => {
         const sn = saves[name];
         html += `<div class="save-row"><span class="sv-name">${this._esc(name)}<br><small>${fmt(sn.savedAt)}</small></span>`
@@ -1782,7 +1816,8 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       m.style.top = Math.max(4, br.bottom - r.top + 4) + 'px';
       m.classList.add('on');
       m.querySelectorAll('[data-load]').forEach(b => b.onclick = () => {
-        const key = b.dataset.load, snap = key === '__auto__' ? auto : saves[key];
+        const key = b.dataset.load, snap = key === '__auto__' ? auto : key === '__prev__' ? prev : saves[key];
+        this._backupPrev();                                  // 載入前先備份目前
         this._pushHistory();
         if (this._loadSnapshot(snap)) this._setStatus('✓ 已載入');
         this._hideMenu();
