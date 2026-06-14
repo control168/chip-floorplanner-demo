@@ -245,7 +245,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
         labels: false,
         names: true,
         measure: false,
-        drc: { on: false, minSpacing: 0, edgeMargin: 0, boundary: true },
+        drc: { on: false, minSpacing: 0, edgeMargin: 0, minVGap: 0, boundary: true },
         coordBasis: 'LL',
         schemes: [],
         activeScheme: 0,
@@ -862,6 +862,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
     _runDRC() {
       const drc = this.state.drc;
       const minS = drc.on ? (drc.minSpacing || 0) : 0;
+      const minVG = drc.on ? (drc.minVGap || 0) : 0;
       const items = [];
       this.state.floors.forEach((f, idx) => f.comps.forEach(c => items.push({ c, idx, box: this._obb(c, idx) })));
       const viol = [], red = new Set(), amber = new Set(), koHit = new Set();
@@ -869,14 +870,21 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
       // 兩兩：碰撞（同一垂直層）/ 間距不足
       for (let i = 0; i < items.length; i++)
         for (let j = i + 1; j < items.length; j++) {
-          const A = items[i], B = items[j];
-          if (!(A.box.miny < B.box.maxy && A.box.maxy > B.box.miny)) continue; // Y 不重疊則不比較
-          if (this._overlapXZ(A.box, B.box)) {
-            red.add(A.c.id); red.add(B.c.id);
-            viol.push({ sev: 2, text: `碰撞重疊：${A.c.name} ✕ ${B.c.name}` });
-          } else if (minS > 0 && this._overlapXZ(this._inflate(A.box, minS / 2), this._inflate(B.box, minS / 2))) {
-            amber.add(A.c.id); amber.add(B.c.id);
-            viol.push({ sev: 1, text: `間距 < ${minS}：${A.c.name} ↔ ${B.c.name}` });
+          const A = items[i], B = items[j], yOv = A.box.miny < B.box.maxy && A.box.maxy > B.box.miny;
+          if (yOv) {
+            if (this._overlapXZ(A.box, B.box)) {
+              red.add(A.c.id); red.add(B.c.id);
+              viol.push({ sev: 2, text: `碰撞重疊：${A.c.name} ✕ ${B.c.name}` });
+            } else if (minS > 0 && this._overlapXZ(this._inflate(A.box, minS / 2), this._inflate(B.box, minS / 2))) {
+              amber.add(A.c.id); amber.add(B.c.id);
+              viol.push({ sev: 1, text: `間距 < ${minS}：${A.c.name} ↔ ${B.c.name}` });
+            }
+          } else if (minVG > 0 && this._overlapXZ(A.box, B.box)) {     // 上下層、footprint 重疊 → 垂直淨距
+            const gap = Math.max(A.box.miny - B.box.maxy, B.box.miny - A.box.maxy);
+            if (gap < minVG) {
+              amber.add(A.c.id); amber.add(B.c.id);
+              viol.push({ sev: 1, text: `層間淨距 < ${minVG}：${A.c.name} ↕ ${B.c.name}（${+gap.toFixed(2)}）` });
+            }
           }
         }
       // 邊界包覆
@@ -1152,6 +1160,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
         <div class="row"><label>間距/邊距(DRC)</label><div class="grid3">
           <input data-fk="minSpacing" type="number" step="0.5" value="${this.state.drc.minSpacing}">
           <input data-fk="edgeMargin" type="number" step="0.5" value="${this.state.drc.edgeMargin}"></div></div>
+        <div class="row"><label>垂直淨距(DRC)</label><input data-fk="minVGap" type="number" step="0.5" value="${this.state.drc.minVGap || 0}"></div>
         ${isBottom ? '' : `<div class="cat-desc" style="padding:2px 0 0">W/D 上限＝最底層 ${this._maxW()}×${this._maxD()}</div>`}
         <div class="menu-actions"><button class="btn on" data-fkact="close">完成</button></div>`;
       const r = this.el.stage.getBoundingClientRect();
@@ -1172,6 +1181,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
           else if (k === 'grid') f.grid = n;
           else if (k === 'minSpacing') this.state.drc.minSpacing = n;
           else if (k === 'edgeMargin') this.state.drc.edgeMargin = n;
+          else if (k === 'minVGap') this.state.drc.minVGap = n;
         });
         if (f.thickness > f.h) f.thickness = f.h;                       // 板厚 ≤ 層高
         if (isBottom) this.state.floors.forEach((fl, i) => { if (i > 0) { fl.w = Math.min(fl.w, f.w); fl.d = Math.min(fl.d, f.d); } });
@@ -1663,7 +1673,7 @@ Die/HBM Level,,,,,,CoWoS,HBM Stack 4,11,11,8,7.5,35.5,0,0,12-Hi DRAM cube
         v: 1, savedAt: new Date().toISOString(),
         schemes: this.state.schemes, activeScheme: this.state.activeScheme, activeFloor: this.state.activeFloor,
         coordBasis: this.state.coordBasis, labels: this.state.labels, names: this.state.names,
-        drc: { minSpacing: this.state.drc.minSpacing, edgeMargin: this.state.drc.edgeMargin, on: this.state.drc.on, boundary: this.state.drc.boundary },
+        drc: { minSpacing: this.state.drc.minSpacing, edgeMargin: this.state.drc.edgeMargin, minVGap: this.state.drc.minVGap, on: this.state.drc.on, boundary: this.state.drc.boundary },
       };
     }
     // 套用快照到 state（不碰場景，供初始化還原用）

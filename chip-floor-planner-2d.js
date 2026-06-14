@@ -139,7 +139,7 @@
       this.root = this.attachShadow({ mode: 'open' });
       this.state = {
         floors: [], activeFloor: 0, selected: null, snap: true, names: true,
-        drc: { on: false, minSpacing: 0, edgeMargin: 0, boundary: true },
+        drc: { on: false, minSpacing: 0, edgeMargin: 0, minVGap: 0, boundary: true },
         coordBasis: 'LL', schemes: [], activeScheme: 0,
         view: 'top', isoRot: 0,                 // top=俯視平面 / iso=等角 2.5D
       };
@@ -226,14 +226,18 @@
       return true;
     }
     _runDRC() {
-      const drc = this.state.drc, minS = drc.on ? (drc.minSpacing || 0) : 0;
+      const drc = this.state.drc, minS = drc.on ? (drc.minSpacing || 0) : 0, minVG = drc.on ? (drc.minVGap || 0) : 0;
       const items = []; this.state.floors.forEach((f, idx) => f.comps.forEach(c => items.push({ c, idx, box: this._obb(c, idx) })));
       const viol = [], red = new Set(), amber = new Set(), koHit = new Set();
       for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
-        const A = items[i], B = items[j];
-        if (!(A.box.miny < B.box.maxy && A.box.maxy > B.box.miny)) continue;
-        if (this._overlapXZ(A.box, B.box)) { red.add(A.c.id); red.add(B.c.id); viol.push({ sev: 2, text: `碰撞重疊：${A.c.name} ✕ ${B.c.name}` }); }
-        else if (minS > 0 && this._overlapXZ(this._inflate(A.box, minS / 2), this._inflate(B.box, minS / 2))) { amber.add(A.c.id); amber.add(B.c.id); viol.push({ sev: 1, text: `間距 < ${minS}：${A.c.name} ↔ ${B.c.name}` }); }
+        const A = items[i], B = items[j], yOv = A.box.miny < B.box.maxy && A.box.maxy > B.box.miny;
+        if (yOv) {
+          if (this._overlapXZ(A.box, B.box)) { red.add(A.c.id); red.add(B.c.id); viol.push({ sev: 2, text: `碰撞重疊：${A.c.name} ✕ ${B.c.name}` }); }
+          else if (minS > 0 && this._overlapXZ(this._inflate(A.box, minS / 2), this._inflate(B.box, minS / 2))) { amber.add(A.c.id); amber.add(B.c.id); viol.push({ sev: 1, text: `間距 < ${minS}：${A.c.name} ↔ ${B.c.name}` }); }
+        } else if (minVG > 0 && this._overlapXZ(A.box, B.box)) {     // 上下層、footprint 重疊 → 檢查垂直淨距
+          const gap = Math.max(A.box.miny - B.box.maxy, B.box.miny - A.box.maxy);
+          if (gap < minVG) { amber.add(A.c.id); amber.add(B.c.id); viol.push({ sev: 1, text: `層間淨距 < ${minVG}：${A.c.name} ↕ ${B.c.name}（${+gap.toFixed(2)}）` }); }
+        }
       }
       if (drc.on && drc.boundary) items.forEach(({ c, idx }) => {
         const f = this.state.floors[idx];
@@ -521,6 +525,7 @@
         h += this._field('層高/板厚', `<div class="grid2"><input data-f="h" type="number" value="${f.h}"><input data-f="thickness" type="number" value="${this._slabT(f)}"></div>`);
         h += this._field('格距 µm', `<input data-f="grid" type="number" step="0.1" value="${f.grid || 1}">`);
         h += this._field('間距/邊距', `<div class="grid2"><input data-f="minSpacing" type="number" step="0.5" value="${this.state.drc.minSpacing}"><input data-f="edgeMargin" type="number" step="0.5" value="${this.state.drc.edgeMargin}"></div>`);
+        h += this._field('垂直淨距', `<input data-f="minVGap" type="number" step="0.5" value="${this.state.drc.minVGap || 0}">`);
         if (!isB) h += `<div class="muted">W/D 上限＝最底層 ${this._maxW()}×${this._maxD()}</div>`;
       }
       // DRC 違規清單
@@ -560,7 +565,7 @@
       num('w', v => f.w = isB ? v : Math.min(v, this._maxW()));
       num('d', v => f.d = isB ? v : Math.min(v, this._maxD()));
       num('h', v => f.h = v); num('thickness', v => f.thickness = v); num('grid', v => f.grid = v);
-      num('minSpacing', v => this.state.drc.minSpacing = v); num('edgeMargin', v => this.state.drc.edgeMargin = v);
+      num('minSpacing', v => this.state.drc.minSpacing = v); num('edgeMargin', v => this.state.drc.edgeMargin = v); num('minVGap', v => this.state.drc.minVGap = v);
       if (f.thickness > f.h) f.thickness = f.h;
       if (isB) this.state.floors.forEach((fl, i) => { if (i > 0) { fl.w = Math.min(fl.w, f.w); fl.d = Math.min(fl.d, f.d); } });
       this._drawSvg(); this._renderTabs();
