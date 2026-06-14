@@ -140,6 +140,7 @@
         floors: [], activeFloor: 0, selected: null, snap: true, names: true,
         drc: { on: false, minSpacing: 0, edgeMargin: 0, boundary: true },
         coordBasis: 'LL', schemes: [], activeScheme: 0,
+        view: 'top', isoRot: 0,                 // top=俯視平面 / iso=等角 2.5D
       };
       this._addFloor('Substrate Level', 120, 120, 10);
       this._addFloor('Interposer Level', 120, 120, 6);
@@ -250,6 +251,10 @@
             <button class="btn" data-act="save">💾 儲存</button>
             <button class="btn" data-act="load">📂 載入</button>
             <div class="sep"></div>
+            <button class="btn on" data-act="vtop">▦ 平面</button>
+            <button class="btn" data-act="viso">◈ 等角</button>
+            <button class="btn" data-act="isorot" style="display:none">↻ 視角</button>
+            <div class="sep"></div>
             <button class="btn on" data-act="snap">⌁ 吸附</button>
             <button class="btn on" data-act="names">🔤 名稱</button>
             <button class="btn" data-act="drc">🛡 DRC</button>
@@ -331,6 +336,12 @@
       const set = (a, on) => { const el = this.root.querySelector(`[data-act="${a}"]`); if (el) el.classList.toggle('on', on); };
       set('snap', this.state.snap); set('names', this.state.names); set('drc', this.state.drc.on);
       const cb = this.root.querySelector('[data-fld="coordbasis"]'); if (cb) cb.value = this.state.coordBasis;
+      this._updateViewBtns();
+    }
+    _updateViewBtns() {
+      const vt = this.root.querySelector('[data-act="vtop"]'), vi = this.root.querySelector('[data-act="viso"]'), ir = this.root.querySelector('[data-act="isorot"]');
+      const iso = this.state.view === 'iso';
+      if (vt) vt.classList.toggle('on', !iso); if (vi) vi.classList.toggle('on', iso); if (ir) ir.style.display = iso ? '' : 'none';
     }
 
     // ===========================================================================
@@ -343,6 +354,7 @@
       this._autoSave();
     }
     _drawSvg() {
+      if (this.state.view === 'iso') { this._drawIso(); return; }
       const f = this.floor; if (!f) return;
       const W = f.w, D = f.d, VBW = W + 2 * PAD, VBH = D + 2 * PAD;
       this.el.svg.setAttribute('viewBox', `0 0 ${VBW} ${VBH}`);
@@ -390,6 +402,76 @@
         + `<text x="${ox + 2}" y="${oy + (this._yFlip() < 0 ? 4 : -2)}" font-size="3.4" fill="#94a3b8">原點 0,0</text></g>`;
       this.el.svg.innerHTML = s;
       // badge
+      const bad = drc.viol.length > 0;
+      this.el.badge.classList.toggle('bad', bad);
+      this.el.badge.textContent = bad ? `⚠ ${drc.viol.length} 項${this.state.drc.on ? ' DRC' : ''}違規` : (this.state.drc.on ? '✓ DRC 通過' : '✓ 無碰撞');
+    }
+
+    _shade(hex, fac) {
+      if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return hex;
+      const n = parseInt(hex.slice(1), 16);
+      const r = Math.min(255, Math.round(((n >> 16) & 255) * fac));
+      const g = Math.min(255, Math.round(((n >> 8) & 255) * fac));
+      const b = Math.min(255, Math.round((n & 255) * fac));
+      return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+    }
+    // 等角(2.5D)：3D→等角投影、每方塊 3 面著色、畫家演算法排序，純 SVG
+    _drawIso() {
+      const A = 0.92, B = 0.5, ZE = 1.0;                       // 等角投影係數 / Z 放大
+      const vr = (this.state.isoRot || 0) * Math.PI / 180, cv = Math.cos(vr), sv = Math.sin(vr);
+      const iso = (X, Y, Z) => ({ x: (X - Y) * A, y: (X + Y) * B - Z * ZE });
+      const drc = this._runDRC();
+      const boxes = [];
+      const add = (cx, cy, w, d, zb, zt, rotDeg, color, isComp, comp) => {
+        const wx = cx * cv - cy * sv, wy = cx * sv + cy * cv;
+        const ang = (rotDeg + (this.state.isoRot || 0)) * Math.PI / 180, ca = Math.cos(ang), sa = Math.sin(ang);
+        const offs = [[w / 2, d / 2], [-w / 2, d / 2], [-w / 2, -d / 2], [w / 2, -d / 2]];
+        const base = offs.map(([ox, oy]) => ({ X: wx + ox * ca - oy * sa, Y: wy + ox * sa + oy * ca }));
+        boxes.push({ base, top: base.map(p => iso(p.X, p.Y, zt)), bot: base.map(p => iso(p.X, p.Y, zb)), wx, wy, zt, depth: wx + wy + (zb + zt) / 2, color, isComp, comp });
+      };
+      this.state.floors.forEach((f, idx) => {
+        const baseY = this._floorBaseY(idx), T = this._slabT(f);
+        add(0, 0, f.w, f.d, baseY, baseY + T, 0, '#2b3a52', false, null);     // 樓層板
+        f.comps.forEach(c => {
+          const zb = baseY + T + (c.z || 0), zt = zb + c.h;
+          let col = c.color; if (drc.red.has(c.id)) col = '#ff1133'; else if (drc.amber.has(c.id)) col = '#f59e0b';
+          add(c.x, c.y, c.w, c.d, zb, zt, c.rot || 0, col, true, c);
+        });
+      });
+      boxes.sort((a, b) => a.depth - b.depth);                  // 畫家演算法：由後往前
+      let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
+      boxes.forEach(bx => bx.top.concat(bx.bot).forEach(p => { if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x; if (p.y < miny) miny = p.y; if (p.y > maxy) maxy = p.y; }));
+      const pad = 8;
+      this.el.svg.setAttribute('viewBox', `${(minx - pad).toFixed(1)} ${(miny - pad).toFixed(1)} ${(maxx - minx + 2 * pad).toFixed(1)} ${(maxy - miny + 2 * pad).toFixed(1)}`);
+      this.el.svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+      const poly = (pts, fill, stroke, sw) => `<polygon points="${pts.map(p => p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(' ')}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>`;
+      let s = '';
+      boxes.forEach(bx => {
+        const sel = bx.comp && this.state.selected === bx.comp.id;
+        const edge = sel ? '#fbbf24' : '#0b1220', esw = sel ? 0.8 : 0.25;
+        let faces = '';
+        for (let i = 0; i < 4; i++) {
+          const j = (i + 1) % 4;
+          const ex = bx.base[j].X - bx.base[i].X, ey = bx.base[j].Y - bx.base[i].Y;
+          let nx = ey, ny = -ex;
+          const mx = (bx.base[i].X + bx.base[j].X) / 2 - bx.wx, my = (bx.base[i].Y + bx.base[j].Y) / 2 - bx.wy;
+          if (nx * mx + ny * my < 0) { nx = -nx; ny = -ny; }
+          if (nx + ny <= 1e-4) continue;                       // 非朝向鏡頭的側面不畫
+          const fac = (Math.abs(nx) >= Math.abs(ny)) ? 0.82 : 0.6;
+          faces += poly([bx.top[i], bx.top[j], bx.bot[j], bx.bot[i]], this._shade(bx.color, fac), edge, esw);
+        }
+        faces += poly(bx.top, this._shade(bx.color, bx.isComp ? 1.12 : 0.95), edge, esw);   // 頂面
+        let label = '';
+        if (bx.isComp && this.state.names) {
+          const tx = (bx.top[0].x + bx.top[1].x + bx.top[2].x + bx.top[3].x) / 4;
+          const ty = (bx.top[0].y + bx.top[1].y + bx.top[2].y + bx.top[3].y) / 4;
+          const fs = Math.max(2, Math.min(bx.comp.w, bx.comp.d) * 0.13);
+          const nm = bx.comp.name.length > 13 ? bx.comp.name.slice(0, 12) + '…' : bx.comp.name;
+          label = `<text x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" font-size="${fs}" fill="#0b1220" text-anchor="middle" dominant-baseline="central" style="pointer-events:none;font-weight:600">${esc(nm)}</text>`;
+        }
+        s += `<g${bx.isComp ? ` data-comp-id="${bx.comp.id}" style="cursor:pointer"` : ''}>${faces}${label}</g>`;
+      });
+      this.el.svg.innerHTML = s;
       const bad = drc.viol.length > 0;
       this.el.badge.classList.toggle('bad', bad);
       this.el.badge.textContent = bad ? `⚠ ${drc.viol.length} 項${this.state.drc.on ? ' DRC' : ''}違規` : (this.state.drc.on ? '✓ DRC 通過' : '✓ 無碰撞');
@@ -471,6 +553,11 @@
     _onDown(e) {
       if (e.button !== 0) return;
       const compEl = e.target.closest('[data-comp-id]'), koEl = e.target.closest('[data-ko-id]');
+      if (this.state.view === 'iso') {                          // 等角：只選取，編輯走右側面板
+        if (compEl) { const id = compEl.dataset.compId; const fi = this.state.floors.findIndex(f => f.comps.some(c => c.id === id)); if (fi >= 0) this.state.activeFloor = fi; this.state.selected = id; }
+        else this.state.selected = null;
+        this._render(); return;
+      }
       if (compEl) {
         const id = compEl.dataset.compId; this.state.selected = id;
         this.drag = { id, moved: false }; this.el.svg.setPointerCapture(e.pointerId);
@@ -534,6 +621,9 @@
       const tog = (k, key) => { this.state[k] = !this.state[k]; this.root.querySelector(`[data-act="${key}"]`).classList.toggle('on', this.state[k]); this._render(); };
       if (act === 'undo') this._undo();
       else if (act === 'redo') this._redo();
+      else if (act === 'vtop') { this.state.view = 'top'; this._updateViewBtns(); this._render(); }
+      else if (act === 'viso') { this.state.view = 'iso'; this._updateViewBtns(); this._render(); }
+      else if (act === 'isorot') { this.state.isoRot = ((this.state.isoRot || 0) + 90) % 360; this._render(); }
       else if (act === 'snap') tog('snap', 'snap');
       else if (act === 'names') tog('names', 'names');
       else if (act === 'drc') { this.state.drc.on = !this.state.drc.on; this.root.querySelector('[data-act="drc"]').classList.toggle('on', this.state.drc.on); this._render(); }
